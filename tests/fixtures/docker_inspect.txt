@@ -1,0 +1,8 @@
+/sesli-asistan-api|0|2026-09-06T07:12:45.123456789Z
+/sesli-asistan-telephony|2|2026-09-06T07:12:45.223456789Z
+/backend-api-1|0|2026-09-13T06:01:03.1Z
+/backend-postgres-1|0|2026-09-13T06:01:02.1Z
+/yuksel-yazilim-frontend|0|2026-09-15T11:30:01Z
+/prometheus|0|2026-08-20T08:00:01Z
+/grafana|0|2026-08-20T08:00:01Z
+/postgres-exporter|1|2026-08-20T08:00:01Z

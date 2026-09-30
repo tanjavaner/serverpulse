@@ -1,0 +1,10 @@
+@@S ready
+/var/run/postgresql:5432 - accepting connections
+@@RC 0
+@@S conns
+14
+@@RC 0
+@@S sizes
+postgres|7533103
+restaurant|48213555
+@@RC 0

@@ -1,0 +1,48 @@
+{
+  "name": "serverpulse",
+  "productName": "ServerPulse",
+  "version": "0.2.0",
+  "description": "Agentless SSH tabanlı sunucu ve proje izleme masaüstü uygulaması",
+  "main": "./out/main/index.js",
+  "author": "Yüksel Yazılım",
+  "license": "UNLICENSED",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tanjavaner/serverpulse.git"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "icons": "node scripts/gen-icon.mjs",
+    "dist:win": "npm run build && electron-builder --win --x64 --publish never",
+    "dist:mac": "npm run build && electron-builder --mac --arm64 --publish never",
+    "release": "npm version patch && git push --follow-tags"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "ssh2": "^1.17.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/ssh2": "^1.15.6",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "recharts": "^3.10.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~5.9.3",
+    "vite": "^7.0.0",
+    "vitest": "^5.0.2"
+  }
+}

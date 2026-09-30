@@ -1,0 +1,13 @@
+asterisk.service                  loaded active running Asterisk PBX
+containerd.service                loaded active running containerd container runtime
+cron.service                      loaded active running Regular background program processing daemon
+dbus.service                      loaded active running D-Bus System Message Bus
+docker.service                    loaded active running Docker Application Container Engine
+fail2ban.service                  loaded active running Fail2Ban Service
+nginx.service                     loaded active running A high performance web server and a reverse proxy server
+node_exporter.service             loaded active running Prometheus Node Exporter
+ssh.service                       loaded active running OpenBSD Secure Shell server
+systemd-journald.service          loaded active running Journal Service
+systemd-logind.service            loaded active running User Login Management
+systemd-resolved.service          loaded active running Network Name Resolution
+tailscaled.service                loaded active running Tailscale node agent

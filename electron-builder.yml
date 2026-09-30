@@ -1,0 +1,42 @@
+appId: com.yukselyazilim.serverpulse
+productName: ServerPulse
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+  - "!**/*.map"
+# Native bağımlılık yok (SQLite için node:sqlite kullanılıyor; ssh2'nin cpu-features'ı opsiyonel).
+npmRebuild: false
+asar: true
+# Otomatik güncelleme: CI, v* etiketlerinde kurulumu + latest.yml'yi GitHub Releases'a yükler; electron-updater oradan okur.
+publish:
+  provider: github
+  owner: tanjavaner
+  repo: serverpulse
+  releaseType: release
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.png
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: ServerPulse
+  # Boşluksuz ad: GitHub boşlukları noktaya çevirir, latest.yml ile uyuşmazlık olmasın
+  artifactName: ${productName}-Setup-${version}.${ext}
+mac:
+  target:
+    - target: dmg
+      arch: [arm64]
+  icon: build/icon.png
+  category: public.app-category.developer-tools
+  identity: null
+  extendInfo:
+    LSUIElement: true
+dmg:
+  artifactName: ${productName}-${version}-arm64.${ext}

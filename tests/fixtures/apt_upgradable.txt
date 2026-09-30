@@ -1,0 +1,7 @@
+containerd.io/noble 1.7.28-1~ubuntu.24.04~noble amd64 [upgradable from: 1.7.27-1]
+docker-ce-cli/noble 5:28.5.1-1~ubuntu.24.04~noble amd64 [upgradable from: 5:28.4.0-1~ubuntu.24.04~noble]
+docker-ce/noble 5:28.5.1-1~ubuntu.24.04~noble amd64 [upgradable from: 5:28.4.0-1~ubuntu.24.04~noble]
+libheif1/noble-updates,noble-security 1.17.6-1ubuntu4.2 amd64 [upgradable from: 1.17.6-1ubuntu4.1]
+libssl3t64/noble-updates,noble-security 3.0.13-0ubuntu3.6 amd64 [upgradable from: 3.0.13-0ubuntu3.5]
+openssl/noble-updates,noble-security 3.0.13-0ubuntu3.6 amd64 [upgradable from: 3.0.13-0ubuntu3.5]
+python3-update-manager/noble-updates 1:24.04.12 all [upgradable from: 1:24.04.10]

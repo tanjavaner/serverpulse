@@ -1,0 +1,26 @@
+
+ Endpoint:  <Endpoint/CID.....................................>  <State.....>  <Channels.>
+    I/OAuth:  <AuthId/UserName...........................................................>
+        Aor:  <Aor............................................>  <MaxContact>
+      Contact:  <Aor/ContactUri..........................> <Hash....> <Status> <RTT(ms)..>
+  Transport:  <TransportId........>  <Type>  <cos>  <tos>  <BindAddress..................>
+   Identify:  <Identify/Endpoint.........................................................>
+        Match:  <criteria.........................>
+    Channel:  <ChannelId......................................>  <State.....>  <Time.....>
+        Exten: <DialedExten...........>  CLCID: <ConnectedLineCID.......>
+==========================================================================================
+
+ Endpoint:  1001/1001                                            Not in use    0 of inf
+     InAuth:  1001/1001
+        Aor:  1001                                               1
+      Contact:  1001/sip:1001@10.0.0.5:5060              5f1e2a3b4c Avail        12.345
+
+ Endpoint:  netgsm-trunk                                         In use        2 of inf
+    OutAuth:  netgsm-auth/8503001234
+        Aor:  netgsm-trunk                                       1
+      Contact:  netgsm-trunk/sip:sip.netgsm.com.tr:5060    a1b2c3d4e5 Avail        28.110
+
+ Endpoint:  yedek-trunk                                          Unavailable   0 of inf
+
+Objects found: 3
+

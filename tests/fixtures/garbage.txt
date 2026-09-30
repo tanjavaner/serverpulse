@@ -1,0 +1,7 @@
+bash: warning: setlocale: LC_ALL: cannot change locale (tr_TR.UTF-8)
+{"broken json
+<html><body>502 Bad Gateway</body></html>
+ ~~~ ??? ~~~
+@@RC notanumber
+cpu
+MemTotal: lots

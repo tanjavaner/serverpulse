@@ -1,0 +1,8 @@
+{"BlockIO":"12.3MB / 4.1kB","CPUPerc":"0.85%","Container":"a1b2c3d4e5f6","ID":"a1b2c3d4e5f6","MemPerc":"2.10%","MemUsage":"208.4MiB / 9.699GiB","Name":"sesli-asistan-api","NetIO":"1.2GB / 900MB","PIDs":"24"}
+{"BlockIO":"1.1MB / 0B","CPUPerc":"3.40%","Container":"b2c3d4e5f607","ID":"b2c3d4e5f607","MemPerc":"1.30%","MemUsage":"129MiB / 9.699GiB","Name":"sesli-asistan-telephony","NetIO":"0B / 0B","PIDs":"12"}
+{"BlockIO":"40MB / 1MB","CPUPerc":"0.12%","Container":"c3d4e5f60718","ID":"c3d4e5f60718","MemPerc":"1.85%","MemUsage":"183.7MiB / 9.699GiB","Name":"backend-api-1","NetIO":"300MB / 250MB","PIDs":"31"}
+{"BlockIO":"1.2GB / 3.4GB","CPUPerc":"0.30%","Container":"d4e5f6071829","ID":"d4e5f6071829","MemPerc":"0.95%","MemUsage":"94.2MiB / 9.699GiB","Name":"backend-postgres-1","NetIO":"250MB / 300MB","PIDs":"9"}
+{"BlockIO":"5MB / 0B","CPUPerc":"0.00%","Container":"e5f607182939","ID":"e5f607182939","MemPerc":"0.08%","MemUsage":"7.8MiB / 9.699GiB","Name":"yuksel-yazilim-frontend","NetIO":"80MB / 1.1GB","PIDs":"5"}
+{"BlockIO":"300MB / 2GB","CPUPerc":"0.60%","Container":"f60718293a4b","ID":"f60718293a4b","MemPerc":"1.20%","MemUsage":"119MiB / 9.699GiB","Name":"prometheus","NetIO":"900MB / 50MB","PIDs":"14"}
+{"BlockIO":"80MB / 10MB","CPUPerc":"0.20%","Container":"0718293a4b5c","ID":"0718293a4b5c","MemPerc":"0.90%","MemUsage":"89.1MiB / 9.699GiB","Name":"grafana","NetIO":"30MB / 60MB","PIDs":"18"}
+{"BlockIO":"2MB / 0B","CPUPerc":"0.05%","Container":"18293a4b5c6d","ID":"18293a4b5c6d","MemPerc":"0.15%","MemUsage":"14.6MiB / 9.699GiB","Name":"postgres-exporter","NetIO":"20MB / 25MB","PIDs":"7"}

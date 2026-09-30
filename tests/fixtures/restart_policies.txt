@@ -1,0 +1,4 @@
+/backend-postgres-1 unless-stopped
+/backend-api-1 unless-stopped
+/sesli-asistan-telephony unless-stopped
+/elated_hopper no
