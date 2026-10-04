@@ -4,6 +4,7 @@ import type { AppSnapshot, Issue, MaintEvent, UpdateStatus } from '@shared/types
 import { Monitor } from './monitor'
 import { Maintenance } from './maintenance'
 import { Updater } from './updater'
+import { RemoteNotifier } from './notify'
 import { registerIpc } from './ipc'
 import { AppTray } from './tray'
 import { allWindows, createWidget, getWidget, openDashboard, setWidgetHeight, setWidgetOnTop, toggleWidget } from './windows'
@@ -66,7 +67,9 @@ if (!app.requestSingleInstanceLock()) {
       }
     })
 
-    registerIpc(monitor, maint, updater, {
+    const remote = new RemoteNotifier(monitor)
+
+    registerIpc(monitor, maint, updater, remote, {
       openDashboard: (id) => void openDashboard(id),
       hideWidget: () => getWidget()?.hide(),
       setWidgetHeight,
@@ -78,6 +81,7 @@ if (!app.requestSingleInstanceLock()) {
       tray?.setSeverity(s.overall, s.issues.length)
     })
     monitor.on('alert', notify)
+    monitor.on('alert', (issue: Issue, kind: 'open' | 'resolved') => remote.send(issue, kind))
 
     tray = new AppTray({
       toggleWidget: () => {

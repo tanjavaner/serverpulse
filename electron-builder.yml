@@ -15,7 +15,8 @@ publish:
   provider: github
   owner: tanjavaner
   repo: serverpulse
-  releaseType: release
+  # CI önce taslağı kendisi açar, electron-builder ona yükler, yayınlama CI'da yapılır
+  releaseType: draft
 win:
   target:
     - target: nsis

@@ -93,10 +93,28 @@ export interface Thresholds {
   debounceSec: number
 }
 
+/** Harici bildirim kanalları. Token/URL burada tutulmaz (safeStorage); yalnızca "kayıtlı mı" bilgisi. */
+export interface RemoteNotifySettings {
+  telegram: { enabled: boolean; chatId: string; hasToken: boolean }
+  webhook: { enabled: boolean; hasUrl: boolean }
+}
+
+export interface RemoteNotifyInput {
+  telegram: { enabled: boolean; chatId: string; /** Boş/undefined: mevcut token korunur. */ token?: string; clearToken?: boolean }
+  webhook: { enabled: boolean; /** Boş/undefined: mevcut URL korunur. */ url?: string; clearUrl?: boolean }
+}
+
+export interface NotifyTestResult {
+  channel: 'telegram' | 'webhook'
+  ok: boolean
+  error?: string
+}
+
 export interface AppSettings {
   intervals: Intervals
   thresholds: Thresholds
   notifications: boolean
+  remoteNotify: RemoteNotifySettings
   openAtLogin: boolean
   widgetAlwaysOnTop: boolean
   widgetShowOnStart: boolean
@@ -117,6 +135,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
     debounceSec: 10
   },
   notifications: true,
+  remoteNotify: {
+    telegram: { enabled: false, chatId: '', hasToken: false },
+    webhook: { enabled: false, hasUrl: false }
+  },
   openAtLogin: false,
   widgetAlwaysOnTop: false,
   widgetShowOnStart: true,

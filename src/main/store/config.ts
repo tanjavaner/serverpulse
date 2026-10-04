@@ -15,7 +15,11 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings> | u
     ...base,
     ...patch,
     intervals: { ...base.intervals, ...(patch.intervals ?? {}) },
-    thresholds: { ...base.thresholds, ...(patch.thresholds ?? {}) }
+    thresholds: { ...base.thresholds, ...(patch.thresholds ?? {}) },
+    remoteNotify: {
+      telegram: { ...base.remoteNotify.telegram, ...(patch.remoteNotify?.telegram ?? {}) },
+      webhook: { ...base.remoteNotify.webhook, ...(patch.remoteNotify?.webhook ?? {}) }
+    }
   }
 }
 

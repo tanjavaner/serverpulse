@@ -13,7 +13,9 @@ import type {
   MaintEvent,
   MaintResult,
   MaintStatus,
+  NotifyTestResult,
   PostcheckResult,
+  RemoteNotifyInput,
   ProjectConfig,
   PromPreset,
   PromResult,
@@ -41,6 +43,9 @@ export interface InvokeApi {
   'projects:save': (serverId: string, projects: ProjectConfig[]) => void
   'project:remove': (id: string) => void
   'settings:save': (patch: Partial<AppSettings>) => AppSettings
+  /** Harici bildirim kanalları (token/URL safeStorage'a yazılır). */
+  'notify:save': (input: RemoteNotifyInput) => AppSettings
+  'notify:test': () => NotifyTestResult[]
   'logs:get': (serverId: string, kind: 'container' | 'unit', name: string) => LogResult
   'history:host': (serverId: string, sinceMs: number) => HostSample[]
   'history:containers': (serverId: string, sinceMs: number) => ContainerSample[]
@@ -106,6 +111,8 @@ export const INVOKE_CHANNELS: InvokeChannel[] = [
   'projects:save',
   'project:remove',
   'settings:save',
+  'notify:save',
+  'notify:test',
   'logs:get',
   'history:host',
   'history:containers',

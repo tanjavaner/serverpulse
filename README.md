@@ -7,7 +7,7 @@ Sunucuları ve üzerindeki projeleri (Docker, systemd, .NET/TS backend'ler, Post
 - **Widget (sağ alt):** Her sunucu için durum, CPU/RAM/Disk çubukları, "8/8 container sağlıklı", aktif çağrı sayısı ve açık sorunlar. Kırmızı durumlar en üstte gösterilir. Tıklanınca dashboard açılır.
 - **Tray / menü çubuğu:** İkon rengi en kötü duruma göre değişir (yeşil, sarı, kırmızı, gri). Tıklayınca widget açılır/kapanır, sağ tık menüsünde Dashboard, Yenile ve Çıkış bulunur.
 - **Dashboard:** Sunucu/proje ağacı, proje kartları (Backend/Frontend/DB/Asterisk rozetleri, HTTP yanıt süresi, SSL kalan gün, container CPU/RAM), 1 saat ile 72 saat arası grafikler (yerel SQLite), isteğe bağlı Prometheus (7 ve 30 gün), loglar, `docker system df`, olay geçmişi.
-- **Alarmlar:** Durum değiştiğinde native bildirim gönderilir (debounce'lu).
+- **Alarmlar:** Durum değiştiğinde native bildirim gönderilir (debounce'lu). İsteğe bağlı olarak **Telegram** ve **webhook**'a da gider (Ayarlar → Harici bildirimler; token/URL işletim sistemi güvenli depolamasında şifreli saklanır).
 
 ## Geliştirme
 
@@ -24,8 +24,8 @@ npm run typecheck
 
 ```bash
 npm run icons        # build/icon.png'yi yeniden üretir (isteğe bağlı; dosya repoda)
-npm run dist:win     # Windows PC'de → dist/ServerPulse Setup 0.1.0.exe (NSIS, x64)
-npm run dist:mac     # Mac'te        → dist/ServerPulse-0.1.0-arm64.dmg
+npm run dist:win     # Windows PC'de → dist/ServerPulse-Setup-x.y.z.exe (NSIS, x64)
+npm run dist:mac     # Mac'te        → dist/ServerPulse-x.y.z-arm64.dmg
 ```
 
 Native bağımlılık yoktur. SQLite için Electron'un içindeki `node:sqlite` kullanılır. Bu yüzden `electron-rebuild` veya derleme araçları gerekmez. Yine de her platformun paketi kendi işletim sisteminde üretilmelidir.

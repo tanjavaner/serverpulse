@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import type { AppSettings, AppSnapshot, UpdateStatus } from '@shared/types'
+import type { AppSettings, AppSnapshot, RemoteNotifySettings, UpdateStatus } from '@shared/types'
 import { api } from '../lib/api'
 import { Alert, Button, Card, Field, SectionTitle, Toggle } from '../components/ui'
 import { cleanErr } from './ServerForm'
@@ -112,8 +112,97 @@ export function SettingsView({ snap }: { snap: AppSnapshot }): ReactNode {
         {saved ? <span className="text-[12px] text-good">✓ Kaydedildi</span> : null}
       </div>
 
+      <RemoteNotifyCard settings={snap.settings.remoteNotify} />
+
       <UpdatesCard />
     </div>
+  )
+}
+
+function RemoteNotifyCard({ settings }: { settings: RemoteNotifySettings }): ReactNode {
+  const [tgOn, setTgOn] = useState(settings.telegram.enabled)
+  const [chatId, setChatId] = useState(settings.telegram.chatId)
+  const [token, setToken] = useState('')
+  const [whOn, setWhOn] = useState(settings.webhook.enabled)
+  const [url, setUrl] = useState('')
+  const [msg, setMsg] = useState<{ kind: 'error' | 'ok'; text: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const run = async (fn: () => Promise<string>): Promise<void> => {
+    setBusy(true)
+    setMsg(null)
+    try {
+      setMsg({ kind: 'ok', text: await fn() })
+    } catch (e) {
+      setMsg({ kind: 'error', text: cleanErr(e) })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const save = (extra: { clearToken?: boolean; clearUrl?: boolean } = {}): Promise<void> =>
+    run(async () => {
+      await api.invoke('notify:save', {
+        telegram: { enabled: tgOn, chatId, token: token || undefined, clearToken: extra.clearToken },
+        webhook: { enabled: whOn, url: url || undefined, clearUrl: extra.clearUrl }
+      })
+      setToken('')
+      setUrl('')
+      if (extra.clearToken) setTgOn(false)
+      if (extra.clearUrl) setWhOn(false)
+      return 'Kaydedildi'
+    })
+
+  const test = (): Promise<void> =>
+    run(async () => {
+      const rs = await api.invoke('notify:test')
+      const bad = rs.filter((r) => !r.ok)
+      if (bad.length) throw new Error(bad.map((r) => `${r.channel}: ${r.error}`).join(' | '))
+      return `Test mesajı gönderildi (${rs.map((r) => r.channel).join(', ')})`
+    })
+
+  return (
+    <Card className="flex flex-col gap-3">
+      <SectionTitle>Harici bildirimler</SectionTitle>
+      <div className="text-[12px] text-ink-2">
+        Alarm açıldığında ve düzeldiğinde Telegram/webhook'a da mesaj gönderilir. Token ve URL işletim sisteminin güvenli depolamasında şifreli saklanır. Uygulama çalışıyor olmalıdır.
+      </div>
+
+      <Toggle checked={tgOn} onChange={setTgOn} label="Telegram" hint="@BotFather ile bot oluşturun, bota bir mesaj yazın; chat ID'yi @userinfobot veya getUpdates ile öğrenin." />
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <Field label="Bot token" hint={settings.telegram.hasToken ? 'Kayıtlı. Değiştirmek için yeni değer yazın.' : undefined}>
+          <input type="password" autoComplete="off" placeholder={settings.telegram.hasToken ? '••••••••' : '123456789:AA...'} value={token} onChange={(e) => setToken(e.target.value)} />
+        </Field>
+        <Field label="Chat ID">
+          <input value={chatId} placeholder="123456789 veya -100..." onChange={(e) => setChatId(e.target.value)} />
+        </Field>
+      </div>
+
+      <Toggle checked={whOn} onChange={setWhOn} label="Webhook (Slack, Discord, Mattermost, özel)" hint="JSON POST: event, severity, title, detail, server, text, content." />
+      <Field label="Webhook URL" hint={settings.webhook.hasUrl ? 'Kayıtlı. Değiştirmek için yeni değer yazın.' : undefined}>
+        <input type="password" autoComplete="off" placeholder={settings.webhook.hasUrl ? '••••••••' : 'https://...'} value={url} onChange={(e) => setUrl(e.target.value)} />
+      </Field>
+
+      {msg ? <Alert kind={msg.kind}>{msg.text}</Alert> : null}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="primary" disabled={busy} onClick={() => void save()}>
+          Kaydet
+        </Button>
+        <Button disabled={busy || (!settings.telegram.hasToken && !settings.webhook.hasUrl)} onClick={() => void test()}>
+          Test mesajı gönder
+        </Button>
+        {settings.telegram.hasToken ? (
+          <Button disabled={busy} onClick={() => void save({ clearToken: true })}>
+            Telegram token'ını sil
+          </Button>
+        ) : null}
+        {settings.webhook.hasUrl ? (
+          <Button disabled={busy} onClick={() => void save({ clearUrl: true })}>
+            Webhook URL'sini sil
+          </Button>
+        ) : null}
+      </div>
+    </Card>
   )
 }
 

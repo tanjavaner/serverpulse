@@ -4,6 +4,7 @@ import type { InvokeApi, InvokeChannel } from '@shared/ipc'
 import type { Monitor } from './monitor'
 import type { Maintenance } from './maintenance'
 import type { Updater } from './updater'
+import type { RemoteNotifier } from './notify'
 import { discover, getLogs, probe, prometheusQuery, restartContainer, testConnection } from './operations'
 
 type Handlers = { [K in InvokeChannel]: (...args: Parameters<InvokeApi[K]>) => ReturnType<InvokeApi[K]> | Promise<ReturnType<InvokeApi[K]>> }
@@ -15,7 +16,7 @@ export interface WindowActions {
   applySettings: () => void
 }
 
-export function registerIpc(monitor: Monitor, maint: Maintenance, updater: Updater, win: WindowActions): void {
+export function registerIpc(monitor: Monitor, maint: Maintenance, updater: Updater, notifier: RemoteNotifier, win: WindowActions): void {
   const confirm = async (message: string, okLabel = 'Evet, yeniden başlat'): Promise<boolean> => {
     const parent = BrowserWindow.getFocusedWindow()
     const opts: Electron.MessageBoxOptions = {
@@ -52,10 +53,14 @@ export function registerIpc(monitor: Monitor, maint: Maintenance, updater: Updat
     'projects:save': (serverId, projects) => monitor.saveProjects(serverId, projects),
     'project:remove': (id) => monitor.removeProject(id),
     'settings:save': (patch) => {
-      const s = monitor.saveSettings(patch)
+      // Bildirim kanalları yalnızca 'notify:save' ile değişir (hasToken/hasUrl istemciden gelmemeli)
+      const { remoteNotify: _ignored, ...rest } = patch
+      const s = monitor.saveSettings(rest)
       win.applySettings()
       return s
     },
+    'notify:save': (input) => notifier.save(input),
+    'notify:test': () => notifier.test(),
     'logs:get': (serverId, kind, name) => getLogs(monitor, serverId, kind, name),
     'history:host': (serverId, since) => monitor.history.hostSamples(serverId, Number(since)),
     'history:containers': (serverId, since) => monitor.history.containerSamples(serverId, Number(since)),

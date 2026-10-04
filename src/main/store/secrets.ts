@@ -45,6 +45,27 @@ export class SecretStore {
     writeJsonAtomic(this.path, this.data)
   }
 
+  /** Sunucu dışı düz metin sırlar (bildirim token'ı vb.). Anahtarlar sunucu id'leriyle çakışmaz. */
+  getText(key: string): string | null {
+    const enc = this.data[`text:${key}`]
+    if (!enc) return null
+    try {
+      return safeStorage.decryptString(Buffer.from(enc, 'base64'))
+    } catch {
+      return null
+    }
+  }
+
+  setText(key: string, value: string | null): void {
+    if (value === null) {
+      delete this.data[`text:${key}`]
+    } else {
+      this.ensureAvailable()
+      this.data[`text:${key}`] = safeStorage.encryptString(value).toString('base64')
+    }
+    writeJsonAtomic(this.path, this.data)
+  }
+
   remove(serverId: string): void {
     delete this.data[serverId]
     writeJsonAtomic(this.path, this.data)

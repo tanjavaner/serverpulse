@@ -1,5 +1,9 @@
 # v* etiketi pushlanınca Windows kurulumunu derler ve GitHub Releases'a yayınlar.
 # Kurulu uygulamalar (electron-updater) buradaki latest.yml'yi okuyup kendini günceller.
+#
+# Release kaydı electron-builder'a bırakılmaz: önce tek bir taslak açılır, electron-builder
+# dosyaları ona yükler, sonra yayınlanır. (v0.2.0'da aynı etikete iki release açılmış ve
+# latest.yml'nin bulunmadığı kayıt indirme adresini ele geçirmişti.)
 name: Release
 
 on:
@@ -12,6 +16,12 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -25,7 +35,28 @@ jobs:
       - run: npm test
       - run: npm run build
 
-      - name: Paketle ve yayınla
+      - name: Taslak release oluştur
+        run: |
+          # Etiket ile package.json sürümü uyuşmalı (electron-builder latest.yml'yi bu sürümle yazar)
+          PKG="v$(node -p "require('./package.json').version")"
+          [ "$PKG" = "$TAG" ] || { echo "::error::Etiket ($TAG) ile package.json ($PKG) uyuşmuyor"; exit 1; }
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          gh release create "$TAG" --draft --verify-tag --title "${TAG#v}" --notes-from-tag
+
+      - name: Paketle ve taslağa yükle
         run: npx electron-builder --win --x64 --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Yayınla
+        run: gh release edit "$TAG" --draft=false --latest
+
+      - name: Güncelleme dosyalarını doğrula
+        run: |
+          COUNT=$(gh api "repos/${{ github.repository }}/releases" --paginate --jq "[.[] | select(.tag_name==\"$TAG\")] | length" | awk '{s+=$1} END {print s}')
+          [ "$COUNT" = "1" ] || { echo "::error::$TAG için $COUNT release var (1 olmalı)"; exit 1; }
+          URL="https://github.com/${{ github.repository }}/releases/download/$TAG/latest.yml"
+          curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors "$URL" -o latest.yml
+          cat latest.yml
+          grep -q "^version: ${TAG#v}$" latest.yml || { echo "::error::latest.yml sürümü $TAG ile uyuşmuyor"; exit 1; }
+          EXE=$(sed -n 's/^path: //p' latest.yml)
+          curl -fsIL --retry 5 --retry-delay 5 --retry-all-errors "https://github.com/${{ github.repository }}/releases/download/$TAG/$EXE" > /dev/null
+          echo "OK: $URL ve $EXE indirilebilir"
