@@ -1,4 +1,6 @@
 import type { ComponentRole, ContainerInfo, HttpCheck, ProjectConfig } from '@shared/types'
+import { t } from '@shared/i18n'
+import { slug, uniqueId } from '@shared/projects'
 import { parsePublishedPorts } from '../parsers/docker'
 import type { NginxServerBlock } from '../parsers/misc'
 
@@ -65,14 +67,11 @@ const KNOWN_HEALTH_PATHS: { re: RegExp; path: string }[] = [
   { re: /grafana/, path: '/api/health' }
 ]
 
-function slug(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'x'
-}
 
 /** Keşif çıktılarından proje önerileri üretir. Saf fonksiyon: aynı girdi → aynı çıktı. */
 export function buildProposals(input: DiscoveryInput): ProjectConfig[] {
   const { serverId, containers, runningUnits, nginx } = input
-  const groups = new Map<string, { name: string; workingDir?: string; containers: ContainerInfo[] }>()
+  const groups = new Map<string, { key: string; name: string; workingDir?: string; containers: ContainerInfo[] }>()
 
   for (const c of containers) {
     const key = c.composeProject ?? `__standalone`
@@ -80,11 +79,23 @@ export function buildProposals(input: DiscoveryInput): ProjectConfig[] {
     if (g) g.containers.push(c)
     else
       groups.set(key, {
-        name: c.composeProject ? projectNameFrom(c.workingDir, c.composeProject) : 'Diğer container\'lar',
+        key,
+        name: c.composeProject ? projectNameFrom(c.workingDir, c.composeProject) : t('disc.otherContainers'),
         workingDir: c.workingDir,
         containers: [c]
       })
   }
+
+  // Farklı yollardaki aynı adlı klasörler (/opt/a/backend, /opt/b/backend) üst dizin adıyla ayrılır
+  const nameCount = new Map<string, number>()
+  for (const g of groups.values()) nameCount.set(g.name, (nameCount.get(g.name) ?? 0) + 1)
+  for (const g of groups.values()) {
+    if ((nameCount.get(g.name) ?? 0) > 1 && g.workingDir) {
+      const parts = g.workingDir.replace(/\/+$/, '').split('/').filter(Boolean)
+      if (parts.length >= 2) g.name = `${parts[parts.length - 2]}/${g.name}`
+    }
+  }
+  const takenIds = new Set<string>()
 
   const projects: ProjectConfig[] = []
   const usedDomains = new Set<string>()
@@ -131,8 +142,11 @@ export function buildProposals(input: DiscoveryInput): ProjectConfig[] {
       }
     }
 
+    // Kimlik görünen addan değil compose proje adından (sunucuda tekil) üretilir; yine de çakışmaya karşı tekilleştirilir
+    const id = uniqueId(`${serverId}-${slug(g.key === '__standalone' ? 'standalone' : g.key)}`, takenIds)
+    takenIds.add(id)
     projects.push({
-      id: `${serverId}-${slug(g.name)}`,
+      id,
       serverId,
       name: g.name,
       workingDir: g.workingDir,
@@ -166,7 +180,7 @@ export function buildProposals(input: DiscoveryInput): ProjectConfig[] {
 
 function pushProject(projects: ProjectConfig[], serverId: string, name: string): ProjectConfig {
   const p: ProjectConfig = {
-    id: `${serverId}-${slug(name)}`,
+    id: uniqueId(`${serverId}-${slug(name)}`, new Set(projects.map((x) => x.id))),
     serverId,
     name,
     containers: [],

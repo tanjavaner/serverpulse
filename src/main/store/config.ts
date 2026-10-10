@@ -1,17 +1,24 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DEFAULT_SETTINGS, type AppSettings, type ProjectConfig, type ServerConfig } from '@shared/types'
+import { dedupeProjectIds } from '@shared/projects'
+import { DEFAULT_SETTINGS, SETTINGS_LIMITS, type AppSettings, type Intervals, type ProjectConfig, type ServerConfig, type Thresholds } from '@shared/types'
 
 interface ConfigFile {
   version: 1
   servers: ServerConfig[]
   projects: ProjectConfig[]
   settings: AppSettings
+  /** Sessize alınanlar: sorun anahtarı ya da "sunucuId:" öneki → bitiş zamanı (ms). */
+  mutes: Record<string, number>
 }
 
+/** Sessize alma en fazla bu kadar sürebilir (unutulan sessizlik alarmları sonsuza dek kapatmasın). */
+export const MAX_MUTE_MS = 30 * 24 * 3600_000
+
+/** Ayar yamasını birleştirir; sayısal alanlar SETTINGS_LIMITS'e göre doğrulanır (geçersiz değer → base'deki değer). */
 export function mergeSettings(base: AppSettings, patch: Partial<AppSettings> | undefined): AppSettings {
   if (!patch) return structuredClone(base)
-  return {
+  const merged: AppSettings = {
     ...base,
     ...patch,
     intervals: { ...base.intervals, ...(patch.intervals ?? {}) },
@@ -21,6 +28,27 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings> | u
       webhook: { ...base.remoteNotify.webhook, ...(patch.remoteNotify?.webhook ?? {}) }
     }
   }
+  return sanitizeSettings(merged, base)
+}
+
+function clampNum(v: unknown, fallback: number, [min, max]: readonly [number, number]): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return fallback
+  return Math.max(min, Math.min(max, v))
+}
+
+/** Sonlu olmayan sayılar fallback'teki değerde kalır, aralık dışındakiler sınıra çekilir. */
+export function sanitizeSettings(s: AppSettings, fallback: AppSettings): AppSettings {
+  const L = SETTINGS_LIMITS
+  const intervals = { ...s.intervals }
+  for (const k of Object.keys(L.intervals) as (keyof Intervals)[]) {
+    intervals[k] = clampNum(s.intervals[k], fallback.intervals[k], L.intervals[k])
+  }
+  const thresholds = { ...s.thresholds }
+  for (const k of Object.keys(L.thresholds) as (keyof Thresholds)[]) {
+    thresholds[k] = clampNum(s.thresholds[k], fallback.thresholds[k], L.thresholds[k])
+  }
+  const language = s.language === 'tr' || s.language === 'en' || s.language === 'system' ? s.language : fallback.language
+  return { ...s, language, intervals, thresholds, retentionHours: clampNum(s.retentionHours, fallback.retentionHours, L.retentionHours) }
 }
 
 /** Atomik yazma: önce .tmp, sonra rename. */
@@ -36,7 +64,7 @@ export class ConfigStore {
 
   constructor(dir: string) {
     this.path = join(dir, 'config.json')
-    this.data = { version: 1, servers: [], projects: [], settings: structuredClone(DEFAULT_SETTINGS) }
+    this.data = { version: 1, servers: [], projects: [], settings: structuredClone(DEFAULT_SETTINGS), mutes: {} }
     if (existsSync(this.path)) {
       try {
         const raw = JSON.parse(readFileSync(this.path, 'utf8')) as Partial<ConfigFile>
@@ -44,7 +72,15 @@ export class ConfigStore {
           version: 1,
           servers: Array.isArray(raw.servers) ? raw.servers : [],
           projects: Array.isArray(raw.projects) ? raw.projects : [],
-          settings: mergeSettings(DEFAULT_SETTINGS, raw.settings)
+          // Dil ayarı gelmeden önce kurulmuş uygulamalar Türkçe kalsın (yeni kurulumlar sistem dilini izler)
+          settings: mergeSettings(DEFAULT_SETTINGS, raw.settings ? { language: 'tr', ...(raw.settings as Partial<AppSettings>) } : undefined),
+          mutes: raw.mutes && typeof raw.mutes === 'object' && !Array.isArray(raw.mutes) ? raw.mutes : {}
+        }
+        // Eski keşfin ürettiği çakışan proje kimliklerini onar (aynı id'li ikinci proje açılamıyordu)
+        const fixed = dedupeProjectIds(this.data.projects)
+        if (fixed.changed) {
+          this.data.projects = fixed.projects
+          this.persist()
         }
       } catch (e) {
         // Bozuk dosyayı ezmemek için yedekle
@@ -92,7 +128,8 @@ export class ConfigStore {
   }
 
   replaceProjects(serverId: string, projects: ProjectConfig[]): void {
-    this.data.projects = [...this.data.projects.filter((p) => p.serverId !== serverId), ...projects.map((p) => ({ ...p, serverId }))]
+    const all = [...this.data.projects.filter((p) => p.serverId !== serverId), ...projects.map((p) => ({ ...p, serverId }))]
+    this.data.projects = dedupeProjectIds(all).projects
     this.persist()
   }
 
@@ -105,5 +142,21 @@ export class ConfigStore {
     this.data.settings = mergeSettings(this.data.settings, patch)
     this.persist()
     return this.data.settings
+  }
+
+  /** Süresi dolmamış sessizlikler (dolanlar burada temizlenir). */
+  activeMutes(now = Date.now()): Record<string, number> {
+    const active = Object.fromEntries(Object.entries(this.data.mutes).filter(([, until]) => typeof until === 'number' && until > now))
+    if (Object.keys(active).length !== Object.keys(this.data.mutes).length) {
+      this.data.mutes = active
+      this.persist()
+    }
+    return active
+  }
+
+  setMute(key: string, until: number | null): void {
+    if (until === null) delete this.data.mutes[key]
+    else this.data.mutes[key] = until
+    this.persist()
   }
 }

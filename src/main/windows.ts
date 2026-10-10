@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, screen, shell } from 'electron'
 import { EVT_NAVIGATE } from '@shared/ipc'
+import { getLang } from '@shared/i18n'
 
 const WIDGET_W = 340
 const MARGIN = 12
@@ -19,7 +20,8 @@ function webPreferences(): Electron.WebPreferences {
 }
 
 function load(win: BrowserWindow, page: 'widget' | 'dashboard', query?: Record<string, string>): void {
-  const qs = query ? `?${new URLSearchParams(query)}` : ''
+  // Renderer ilk çizimde doğru dili kullansın; sonrasında snapshot'taki ayarı izler
+  const qs = `?${new URLSearchParams({ ...query, lang: getLang() })}`
   if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
     void win.loadURL(`${process.env.ELECTRON_RENDERER_URL}/${page}.html${qs}`)
   } else {

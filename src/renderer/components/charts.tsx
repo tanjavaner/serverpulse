@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Area, AreaChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { clock, dateTime } from '../lib/format'
+import { t } from '@shared/i18n'
+import { clock, dateTime, fmtPct } from '../lib/format'
 
 /** Kategorik seriler sabit sırayla atanır; asla döngüyle üretilmez (en fazla 8). */
 export const SERIES = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)', 'var(--s6)', 'var(--s7)', 'var(--s8)']
@@ -37,7 +38,7 @@ export function SparkArea({
   dataKey,
   color = 'var(--s1)',
   domain = [0, 100],
-  format = (v: number) => `%${v.toFixed(1)}`,
+  format = (v: number) => fmtPct(v, 1),
   height = 140,
   current
 }: {
@@ -59,7 +60,7 @@ export function SparkArea({
       </div>
       {data.length < 2 ? (
         <div className="flex items-center justify-center text-xs text-muted" style={{ height }}>
-          Henüz yeterli geçmiş yok
+          {t('charts.noData')}
         </div>
       ) : (
         <ResponsiveContainer width="100%" height={height}>
@@ -117,7 +118,7 @@ export function MultiLine({
       <div className="mb-1 text-xs font-semibold text-ink">{title}</div>
       {data.length < 2 || series.length === 0 ? (
         <div className="flex items-center justify-center text-xs text-muted" style={{ height }}>
-          Henüz yeterli geçmiş yok
+          {t('charts.noData')}
         </div>
       ) : (
         <ResponsiveContainer width="100%" height={height}>

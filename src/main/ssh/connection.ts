@@ -2,7 +2,8 @@ import { EventEmitter } from 'node:events'
 import { createHash } from 'node:crypto'
 import type { Duplex } from 'node:stream'
 import { Client, type ConnectConfig } from 'ssh2'
-import type { ConnStatus, ServerConfig } from '@shared/types'
+import type { AgentKind, ConnStatus, ServerConfig } from '@shared/types'
+import { t } from '@shared/i18n'
 
 export interface Credentials {
   password?: string
@@ -37,11 +38,17 @@ export function maskSecrets(msg: string, creds?: Credentials | null): string {
   for (const s of [creds?.password, creds?.passphrase]) {
     if (s && s.length >= 3) out = out.split(s).join('***')
   }
-  return out.replace(/-----BEGIN [^-]+-----[\s\S]*?-----END [^-]+-----/g, '[özel anahtar gizlendi]')
+  return out.replace(/-----BEGIN [^-]+-----[\s\S]*?-----END [^-]+-----/g, t('err.keyHidden'))
+}
+
+/** ssh-agent soketi: Windows'ta OpenSSH agent named pipe'ı ya da Pageant, diğerlerinde SSH_AUTH_SOCK. */
+export function agentSocket(kind: AgentKind | undefined, platform = process.platform, env = process.env): string | undefined {
+  if (platform === 'win32') return kind === 'pageant' ? 'pageant' : '\\\\.\\pipe\\openssh-ssh-agent'
+  return env.SSH_AUTH_SOCK || undefined
 }
 
 export function buildConnectConfig(
-  server: Pick<ServerConfig, 'host' | 'port' | 'username' | 'authType'>,
+  server: Pick<ServerConfig, 'host' | 'port' | 'username' | 'authType' | 'agent'>,
   creds: Credentials,
   hostVerifier: (key: Buffer) => boolean
 ): ConnectConfig {
@@ -57,6 +64,10 @@ export function buildConnectConfig(
   if (server.authType === 'key') {
     cfg.privateKey = creds.privateKey
     if (creds.passphrase) cfg.passphrase = creds.passphrase
+  } else if (server.authType === 'agent') {
+    const sock = agentSocket(server.agent)
+    if (!sock) throw new Error(t('err.noAgent'))
+    cfg.agent = sock
   } else {
     cfg.password = creds.password
     cfg.tryKeyboard = true
@@ -71,14 +82,37 @@ export function attachKeyboardInteractive(client: Client, creds: Credentials): v
   })
 }
 
+export class ExecTimeoutError extends Error {}
+
+/** ssh2 kimlik doğrulama hatalarını `level: 'client-authentication'` ile işaretler. */
+export function isAuthError(e: unknown): boolean {
+  return (e as { level?: string } | null)?.level === 'client-authentication'
+}
+
+/** MAX_OUTPUT bayta kadar Buffer biriktirir; metin tek seferde çözülür. */
+function byteCollector(): { push: (d: Buffer) => void; text: () => string } {
+  const chunks: Buffer[] = []
+  let size = 0
+  return {
+    push: (d: Buffer) => {
+      if (size >= MAX_OUTPUT) return
+      const part = size + d.length > MAX_OUTPUT ? d.subarray(0, MAX_OUTPUT - size) : d
+      chunks.push(part)
+      size += part.length
+    },
+    text: () => Buffer.concat(chunks).toString('utf8')
+  }
+}
+
 /** Açık bir ssh2 Client üzerinde tek komut çalıştırır. */
 export function execOn(client: Client, cmd: string, timeoutMs: number): Promise<ExecResult> {
   const started = Date.now()
   return new Promise((resolve, reject) => {
     client.exec(cmd, (err, stream) => {
       if (err) return reject(err)
-      let stdout = ''
-      let stderr = ''
+      // Çok baytlı UTF-8 karakterleri (ğ, ş, …) parça sınırında bölünmesin diye baytlar biriktirilip sonda çözülür
+      const out = byteCollector()
+      const errOut = byteCollector()
       let done = false
       const timer = setTimeout(() => {
         if (done) return
@@ -88,19 +122,15 @@ export function execOn(client: Client, cmd: string, timeoutMs: number): Promise<
         } catch {
           /* yok say */
         }
-        reject(new Error(`Komut zaman aşımına uğradı (${Math.round(timeoutMs / 1000)} sn)`))
+        reject(new ExecTimeoutError(t('err.cmdTimeout', { n: Math.round(timeoutMs / 1000) })))
       }, timeoutMs)
-      stream.on('data', (d: Buffer) => {
-        if (stdout.length < MAX_OUTPUT) stdout += d.toString('utf8')
-      })
-      stream.stderr.on('data', (d: Buffer) => {
-        if (stderr.length < MAX_OUTPUT) stderr += d.toString('utf8')
-      })
+      stream.on('data', out.push)
+      stream.stderr.on('data', errOut.push)
       stream.on('close', (code: number | null) => {
         if (done) return
         done = true
         clearTimeout(timer)
-        resolve({ stdout, stderr, code: typeof code === 'number' ? code : null, ms: Date.now() - started })
+        resolve({ stdout: out.text(), stderr: errOut.text(), code: typeof code === 'number' ? code : null, ms: Date.now() - started })
       })
     })
   })
@@ -189,15 +219,16 @@ export class SshConnection extends EventEmitter {
     }
     const creds = this.getCreds()
     if (!creds) {
-      this.setStatus('error', 'Kayıtlı kimlik bilgisi bulunamadı')
+      this.setStatus('error', t('err.noCredsStored'))
       return
     }
     if (!server.hostKeyFingerprint) {
-      this.setStatus('error', 'Host key onaylanmamış. Sunucu ayarlarından bağlantıyı test edip onaylayın.')
+      this.setStatus('error', t('err.hostKeyNotConfirmed'))
       return
     }
     const expected = server.hostKeyFingerprint
     let mismatch = false
+    let authFailed = false
     const client = new Client()
     this.client = client
     attachKeyboardInteractive(client, creds)
@@ -209,6 +240,7 @@ export class SshConnection extends EventEmitter {
       this.setStatus('ready')
     })
     client.on('error', (e: Error) => {
+      if (isAuthError(e)) authFailed = true
       this.error = maskSecrets(e.message, creds)
     })
     client.on('close', () => {
@@ -217,10 +249,15 @@ export class SshConnection extends EventEmitter {
       if (this.client === client) this.client = undefined
       if (this.disposed) return
       if (mismatch) {
-        this.setStatus('hostkey-mismatch', 'Sunucunun host key parmak izi kayıtlı olanla eşleşmiyor')
+        this.setStatus('hostkey-mismatch', t('err.hostKeyMismatch'))
         return // Otomatik yeniden deneme yok
       }
-      this.setStatus('error', this.error ?? (wasReady ? 'Bağlantı koptu' : 'Bağlanılamadı'))
+      if (authFailed) {
+        // Tekrar tekrar denemek fail2ban'ın bu bilgisayarın IP'sini banlamasına yol açar
+        this.setStatus('auth-failed', t('err.authFailed', { e: this.error ?? t('err.authRejected') }))
+        return
+      }
+      this.setStatus('error', this.error ?? (wasReady ? t('err.connLost') : t('err.connFailed')))
       this.scheduleReconnect()
     })
 
@@ -265,13 +302,14 @@ export class SshConnection extends EventEmitter {
   }
 
   async exec(cmd: string, timeoutMs = 20000): Promise<ExecResult> {
-    if (!this.ready || !this.client) throw new Error('SSH bağlantısı hazır değil')
+    if (!this.ready || !this.client) throw new Error(t('err.sshNotReady'))
     await this.acquire()
     try {
-      if (!this.client) throw new Error('SSH bağlantısı hazır değil')
+      if (!this.client) throw new Error(t('err.sshNotReady'))
       return await execOn(this.client, cmd, timeoutMs)
     } catch (e) {
-      throw new Error(maskSecrets((e as Error).message, this.getCreds()))
+      const msg = maskSecrets((e as Error).message, this.getCreds())
+      throw e instanceof ExecTimeoutError ? new ExecTimeoutError(msg) : new Error(msg)
     } finally {
       this.release()
     }
@@ -279,7 +317,7 @@ export class SshConnection extends EventEmitter {
 
   forwardOut(dstHost: string, dstPort: number): Promise<Duplex> {
     return new Promise((resolve, reject) => {
-      if (!this.ready || !this.client) return reject(new Error('SSH bağlantısı hazır değil'))
+      if (!this.ready || !this.client) return reject(new Error(t('err.sshNotReady')))
       this.client.forwardOut('127.0.0.1', 0, dstHost, dstPort, (err, stream) => (err ? reject(err) : resolve(stream)))
     })
   }
@@ -287,7 +325,7 @@ export class SshConnection extends EventEmitter {
 
 /** Kaydedilmemiş sunucular için (test / host key okuma) geçici bağlantı. */
 export function withTempConnection<T>(
-  server: Pick<ServerConfig, 'host' | 'port' | 'username' | 'authType'>,
+  server: Pick<ServerConfig, 'host' | 'port' | 'username' | 'authType' | 'agent'>,
   creds: Credentials,
   expectedFingerprint: string | undefined,
   fn: (client: Client) => Promise<T>,
@@ -311,8 +349,8 @@ export function withTempConnection<T>(
         (e) => finish(e as Error)
       )
     })
-    client.on('error', (e) => finish(mismatch ? new Error('Host key parmak izi eşleşmiyor') : e))
-    client.on('close', () => finish(new Error('Bağlantı kapandı')))
+    client.on('error', (e) => finish(mismatch ? new Error(t('err.fpMismatch')) : e))
+    client.on('close', () => finish(new Error(t('err.connClosed'))))
     try {
       client.connect(
         buildConnectConfig(server, creds, (key) => {
@@ -338,7 +376,7 @@ export function probeHostKey(host: string, port: number): Promise<{ fingerprint:
     let result: { fingerprint: string; algorithm?: string } | undefined
     const timer = setTimeout(() => {
       client.end()
-      reject(new Error('Zaman aşımı'))
+      reject(new Error(t('err.timeout')))
     }, 15000)
     client.on('error', (e) => {
       clearTimeout(timer)

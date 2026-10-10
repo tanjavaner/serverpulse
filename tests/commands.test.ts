@@ -70,3 +70,14 @@ describe('bölümlü betik', () => {
     expect(() => buildScript([{ name: "x'; id", cmd: 'true' }])).toThrow()
   })
 })
+
+describe('log seçenekleri', () => {
+  it('satır sayısı ve zaman aralığı yalnızca beyaz listeden; takip yok', () => {
+    const c = CMD.containerLogs('web', { lines: 1000, since: '1h' })
+    expect(c).toBe('docker logs --tail 1000 --since 1h --timestamps web 2>&1')
+    expect(CMD.unitLogs('nginx', { lines: 5000, since: '15m' })).toBe('journalctl -u nginx -n 5000 --since "15 min ago" --no-pager 2>&1')
+    for (const cmd of [c, CMD.unitLogs('nginx', { since: '24h' })]) expect(cmd).not.toMatch(/\s(-f|--follow|-F)\b/)
+    expect(() => CMD.containerLogs('web', { lines: 999999 as never })).toThrow(UnsafeInputError)
+    expect(() => CMD.unitLogs('nginx', { since: '1d; rm -rf /' as never })).toThrow(UnsafeInputError)
+  })
+})

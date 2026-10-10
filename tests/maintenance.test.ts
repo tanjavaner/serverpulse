@@ -8,7 +8,9 @@ import {
   parsePsLines,
   parseRebootPkgs,
   parseUpgradable,
-  parseUpgradePoll
+  parseUpgradePoll,
+  parseRestoreOutput,
+  summarizeRestoreErrors
 } from '../src/main/parsers/maintenance'
 import { backupStamp, jobStamp } from '../src/main/maintenance'
 import { sanitizeMaintenance } from '../src/main/monitor'
@@ -102,7 +104,8 @@ describe('bakım komutları', () => {
   })
 
   it('durum kontrolü salt okunurdur', () => {
-    const s = buildScript(CMD.maintStatus())
+    // "command -v apt-get" yalnızca varlık kontrolüdür, apt çalıştırmaz
+    const s = buildScript(CMD.maintStatus()).replace(/command -v apt-get|sudo -n -l [a-z -]+/g, '')
     expect(s).not.toMatch(/apt-get|systemctl|\brm /)
   })
 })
@@ -131,5 +134,46 @@ describe('bakım ayarı ve alarm susturma', () => {
     expect(evaluateServer(server, [], silenced, DEFAULT_SETTINGS.thresholds, now)).toEqual([])
     const expired: ServerState = { ...st, maintenance: { step: 'reboot', since: now - 11 * 60_000 } }
     expect(evaluateServer(server, [], expired, DEFAULT_SETTINGS.thresholds, now).map((i) => i.key)).toContain('s1:unreachable')
+  })
+})
+
+describe('geri yükleme raporu', () => {
+  const out = [
+    '@@ERR',
+    'psql:<stdin>:14: ERROR:  role "postgres" already exists',
+    'psql:<stdin>:30: ERROR:  database "app" already exists',
+    'psql:<stdin>:88: ERROR:  multiple primary keys for table "users" are not allowed',
+    'psql:<stdin>:120: ERROR:  duplicate key value violates unique constraint "users_pkey"',
+    '@@TAIL',
+    'COPY 0',
+    'ALTER TABLE'
+  ].join('\n')
+
+  it('hata ve son satırları ayırır', () => {
+    const r = parseRestoreOutput(out)
+    expect(r.errors).toHaveLength(4)
+    expect(r.tail).toBe('COPY 0\nALTER TABLE')
+  })
+
+  it('"zaten var" hatalarını beklenen sayar, veri hatalarını gerçek hata sayar', () => {
+    const s = summarizeRestoreErrors(parseRestoreOutput(out).errors)
+    expect(s.expected).toBe(3)
+    expect(s.real).toEqual(['psql:<stdin>:120: ERROR:  duplicate key value violates unique constraint "users_pkey"'])
+  })
+
+  it('işaretleyici yoksa tüm çıktı tail olur', () => {
+    expect(parseRestoreOutput('bash: docker: command not found')).toEqual({ errors: [], tail: 'bash: docker: command not found' })
+  })
+
+  it('restore komutu hataları psql çıkış kodundan bağımsız raporlar', () => {
+    const cmd = CMD.maintRestore('restore-2026-10-08_120000.sql.gz', 'pg', 'postgres')
+    expect(cmd).toContain('@@ERR')
+    expect(cmd).toContain('grep "ERROR:"')
+    expect(() => CMD.maintRestore('restore-2026-10-08_120000.sql.gz', 'pg;rm', 'postgres')).toThrow(UnsafeInputError)
+  })
+
+  it('durum kontrolü dağıtım ve paket yöneticisini okur', () => {
+    const names = CMD.maintStatus().map((s) => s.name)
+    expect(names).toEqual(expect.arrayContaining(['os', 'pkg']))
   })
 })

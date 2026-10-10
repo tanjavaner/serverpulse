@@ -1,9 +1,11 @@
 import { connect as netConnect } from 'node:net'
 import { connect as tlsConnect } from 'node:tls'
-import type { AppSettings, HttpCheck, ProjectConfig, ServerConfig, ServerState } from '@shared/types'
-import type { SshConnection } from '../ssh/connection'
+import type { AppSettings, HttpCheck, HttpResult, ProjectConfig, ServerConfig, ServerState } from '@shared/types'
+import { t } from '@shared/i18n'
+import { ExecTimeoutError, type SshConnection } from '../ssh/connection'
 import { CMD, buildScript, parseSections, safeName } from '../ssh/commands'
-import { parseHost, type CpuStat } from '../parsers/host'
+import { parseHost, type CpuStat, type NetCounters } from '../parsers/host'
+import { parseAuthFailures, parseInodes, parseListenPorts, parseNoLogRotation, parseSshdConfig } from '../parsers/insight'
 import {
   isDockerMissing,
   isDockerPermissionError,
@@ -27,10 +29,14 @@ import {
 } from '../parsers/misc'
 import type { HistoryStore } from '../store/history'
 import { hostOf } from '../alerts/evaluate'
+import { statusMatches } from '@shared/http'
 
 /** Collector'lar arasında sunucu başına bellekte tutulan önceki örnekler. */
 export interface ServerMemory {
   prevStat: CpuStat | null
+  prevNet: NetCounters | null
+  /** Hafif mod: son docker stats zamanı. */
+  lastStatsAt?: number
   prevRestarts: Map<string, { restartCount: number | null; lastRestartIncreaseAt: number | null }>
 }
 
@@ -55,6 +61,8 @@ export type CollectorName =
   | 'ssl'
   | 'postgres'
   | 'asterisk'
+  | 'storage'
+  | 'security'
 
 export interface CollectorDef {
   name: CollectorName
@@ -72,7 +80,7 @@ export function tcpPing(host: string, port: number, timeoutMs: number): Promise<
     const sock = netConnect({ host, port })
     const timer = setTimeout(() => {
       sock.destroy()
-      reject(new Error('TCP zaman aşımı'))
+      reject(new Error(t('err.tcpTimeout')))
     }, timeoutMs)
     sock.once('connect', () => {
       clearTimeout(timer)
@@ -113,14 +121,18 @@ const reach: CollectorDef = {
           sshMs = r.ms
         } catch (e) {
           error = (e as Error).message
+          // Yanıt vermeyen (yarı açık) TCP bağlantısını keepalive'ı beklemeden yenile
+          if (e instanceof ExecTimeoutError) conn.reconnectNow()
         }
       } else {
-        error = conn.error ?? 'SSH bağlı değil'
-        // Ağ geri geldiyse geri çekilme süresini beklemeden yeniden dene
+        error = conn.error ?? t('err.sshNotConnected')
+        // Ağ geri geldiyse geri çekilme süresini beklemeden yeniden dene.
+        // auth-failed ve hostkey-mismatch bilerek hariç: kullanıcı müdahalesi gerekir.
         if (conn.status === 'error') conn.reconnectNow()
       }
     }
-    const failed = !tcpOk || (!sshOk && conn.status !== 'connecting')
+    // Kimlik doğrulama hatası erişim sorunu değildir; ayrı alarm olarak raporlanır
+    const failed = !tcpOk || (!sshOk && conn.status !== 'connecting' && conn.status !== 'auth-failed')
     const prev = state.reach?.consecutiveFailures ?? 0
     state.reach = { ts, tcpOk, tcpMs, sshOk, sshMs, consecutiveFailures: failed ? prev + 1 : 0, error: failed ? error : undefined }
   }
@@ -134,8 +146,9 @@ const host: CollectorDef = {
   async run({ conn, state, mem, settings, history, server }) {
     const r = await conn.exec(buildScript(CMD.host()), 15000)
     const now = Date.now()
-    const { metrics, stat } = parseHost(parseSections(r.stdout), mem.prevStat, now)
+    const { metrics, stat, net } = parseHost(parseSections(r.stdout), mem.prevStat, now, mem.prevNet)
     mem.prevStat = stat
+    mem.prevNet = net
     const high = metrics.memPct != null && metrics.memPct >= settings.thresholds.ramPct
     state.host = { ...metrics, memHighSince: high ? (state.host?.memHighSince ?? now) : null }
     history.addHost(server.id, state.host)
@@ -147,29 +160,38 @@ const docker: CollectorDef = {
   needsSsh: true,
   intervalMs: (s) => s.intervals.fastSec * 1000,
   enabled: () => true,
-  async run({ conn, state, mem, history, server }) {
-    const r = await conn.exec(buildScript(CMD.docker()), 30000)
+  async run({ conn, state, mem, history, server, settings }) {
     const now = Date.now()
+    // Hafif mod: stats en fazla orta aralıkta bir alınır; aradaki turlarda son CPU/RAM değerleri korunur
+    const withStats = !settings.lightMode || now - (mem.lastStatsAt ?? 0) >= settings.intervals.mediumSec * 1000
+    const r = await conn.exec(buildScript(CMD.docker(withStats)), 30000)
     const sec = parseSections(r.stdout)
     const psOut = sec.ps?.out ?? ''
     if (isDockerPermissionError(psOut)) {
-      state.docker = { ts: now, available: false, error: "Kullanıcının docker'a erişimi yok (docker grubuna eklenmeli)", containers: [] }
+      state.docker = { ts: now, available: false, error: t('err.dockerPermission'), containers: [] }
       return
     }
     if (isDockerMissing(psOut) || (sec.ps?.rc ?? 1) !== 0) {
-      state.docker = { ts: now, available: false, error: psOut.split('\n')[0] || 'docker ps başarısız', containers: [] }
+      state.docker = { ts: now, available: false, error: psOut.split('\n')[0] || t('err.dockerPsFailed'), containers: [] }
       return
     }
     const ps = parseDockerPs(psOut)
     if (ps.length === 0 && psOut.trim().length > 0) {
-      state.docker = { ts: now, available: false, error: 'docker ps çıktısı çözümlenemedi (bilinmiyor)', containers: [] }
+      state.docker = { ts: now, available: false, error: t('err.dockerPsUnparsed'), containers: [] }
       return
     }
-    const containers = mergeDocker(ps, parseDockerStats(sec.stats?.out ?? ''), parseInspectLines(sec.inspect?.out ?? ''), mem.prevRestarts, now)
+    const stats = withStats ? parseDockerStats(sec.stats?.out ?? '') : previousStats(state)
+    if (withStats) mem.lastStatsAt = now
+    const containers = mergeDocker(ps, stats, parseInspectLines(sec.inspect?.out ?? ''), mem.prevRestarts, now)
     mem.prevRestarts = new Map(containers.map((c) => [c.name, { restartCount: c.restartCount, lastRestartIncreaseAt: c.lastRestartIncreaseAt }]))
     state.docker = { ts: now, available: true, containers }
     history.addContainers(server.id, now, containers)
   }
+}
+
+/** Hafif modda stats alınmayan turlarda bir önceki CPU/RAM değerleri. */
+function previousStats(state: ServerState): ReturnType<typeof parseDockerStats> {
+  return new Map((state.docker?.containers ?? []).map((c) => [c.name, { cpuPct: c.cpuPct, memBytes: c.memBytes, memPct: c.memPct }]))
 }
 
 const dockerMeta: CollectorDef = {
@@ -218,6 +240,36 @@ function checksOf(projects: ProjectConfig[], mode: HttpCheck['mode']): HttpCheck
   return projects.flatMap((p) => p.httpChecks.filter((c) => c.mode === mode))
 }
 
+/** HTTP sonucunu yazar; ardışık hata sayacını (alarm eşiği için) günceller. */
+type RawHttp = { status: number | null; ms: number | null; error?: string }
+
+/**
+ * Ham yanıtı kontrolün beklentilerine göre değerlendirir: durum kodu kuralı (yoksa 5xx hata), anahtar kelime,
+ * yavaş yanıt. Bağlantı hatası (status null) her zaman başarısızdır.
+ */
+export function judgeHttp(r: RawHttp, c: Pick<HttpCheck, 'expectStatus' | 'keyword' | 'slowMs'>, keywordFound?: boolean): Omit<HttpResult, 'checkId' | 'ts'> & { slow: boolean } {
+  if (r.status == null) return { ok: false, status: null, ms: r.ms, error: r.error, slow: false }
+  const statusOk = c.expectStatus ? statusMatches(r.status, c.expectStatus) : r.status < 500
+  if (!statusOk) return { ok: false, status: r.status, ms: r.ms, error: c.expectStatus ? t('err.unexpectedStatus', { s: r.status }) : `HTTP ${r.status}`, slow: false }
+  if (c.keyword && keywordFound === false) return { ok: false, status: r.status, ms: r.ms, error: t('err.keywordMissing', { k: c.keyword }), slow: false }
+  return { ok: true, status: r.status, ms: r.ms, slow: !!c.slowMs && r.ms != null && r.ms > c.slowMs }
+}
+
+/** HTTP sonucunu yazar; ardışık hata ve yavaşlık sayaçlarını (alarm eşiği için) günceller. */
+export function setHttp(state: ServerState, checkId: string, res: Omit<HttpResult, 'checkId' | 'ts' | 'failures' | 'slowStreak'> & { slow?: boolean }): void {
+  const prev = state.http[checkId]
+  const { slow, ...rest } = res
+  const failures = res.ok ? 0 : (prev?.failures ?? 0) + 1
+  const slowStreak = slow ? (prev?.slowStreak ?? 0) + 1 : 0
+  state.http[checkId] = { checkId, ts: Date.now(), ...rest, failures, slowStreak }
+}
+
+/** curl bölüm çıktısından "@@KW 1|0" satırını ayırır. */
+export function splitKeyword(out: string): { out: string; found?: boolean } {
+  const m = /\n?@@KW ([01])\s*$/.exec(out)
+  return m ? { out: out.slice(0, m.index), found: m[1] === '1' } : { out }
+}
+
 const httpLocal: CollectorDef = {
   name: 'httpLocal',
   needsSsh: true,
@@ -225,45 +277,74 @@ const httpLocal: CollectorDef = {
   enabled: ({ projects }) => checksOf(projects, 'local').length > 0,
   async run({ conn, state, projects, settings, history }) {
     const valid: HttpCheck[] = []
-    const now = Date.now()
+    const spec = (c: HttpCheck): { host: string; port: number; path?: string; keyword?: string } => ({
+      host: c.host ?? '127.0.0.1',
+      port: c.port ?? 0,
+      path: c.path,
+      keyword: c.keyword || undefined
+    })
     for (const c of checksOf(projects, 'local')) {
       try {
-        CMD.httpLocal([{ host: c.host ?? '127.0.0.1', port: c.port ?? 0, path: c.path }], 1)
+        CMD.httpLocal([spec(c)], 1)
         valid.push(c)
       } catch (e) {
-        state.http[c.id] = { checkId: c.id, ts: now, ok: false, status: null, ms: null, error: (e as Error).message }
+        setHttp(state, c.id, { ok: false, status: null, ms: null, error: (e as Error).message })
       }
     }
     if (!valid.length) return
-    const t = settings.thresholds.httpTimeoutSec
-    const script = buildScript(CMD.httpLocal(valid.map((c) => ({ host: c.host ?? '127.0.0.1', port: c.port ?? 0, path: c.path })), t))
-    const r = await conn.exec(script, (t * valid.length + 15) * 1000)
+    const timeoutSec = settings.thresholds.httpTimeoutSec
+    const script = buildScript(CMD.httpLocal(valid.map(spec), timeoutSec))
+    const r = await conn.exec(script, (timeoutSec * valid.length + 15) * 1000)
     const sec = parseSections(r.stdout)
     valid.forEach((c, i) => {
       const s = sec[`h${i}`]
-      const res = s ? parseCurl(s.out, s.rc) : { ok: false, status: null, ms: null, error: 'Sonuç yok' }
-      state.http[c.id] = { checkId: c.id, ts: Date.now(), ...res }
-      history.addHttp(c.id, Date.now(), res.status, res.ms)
+      const kw = s ? splitKeyword(s.out) : { out: '' }
+      const raw = s ? parseCurl(kw.out, s.rc) : { status: null, ms: null, error: t('err.noResult') }
+      const res = judgeHttp(raw, c, kw.found)
+      setHttp(state, c.id, res)
+      history.addHttp(c.id, Date.now(), res.status, res.ms, res.ok)
     })
   }
 }
 
-export async function fetchCheck(url: string, timeoutSec: number): Promise<{ ok: boolean; status: number | null; ms: number | null; error?: string }> {
+const BODY_LIMIT = 256 * 1024
+
+/** Gövdenin ilk BODY_LIMIT baytını okur (anahtar kelime araması için), kalanını iptal eder. */
+async function readBodyPrefix(res: Response): Promise<string> {
+  const reader = res.body?.getReader()
+  if (!reader) return ''
+  const chunks: Uint8Array[] = []
+  let size = 0
+  while (size < BODY_LIMIT) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    size += value.length
+  }
+  await reader.cancel().catch(() => undefined)
+  return Buffer.concat(chunks).subarray(0, BODY_LIMIT).toString('utf8')
+}
+
+/** PC'den istek: yanıt süresi başlıklar gelene kadar ölçülür; anahtar kelime varsa gövdede aranır. */
+export async function fetchCheck(url: string, timeoutSec: number, keyword?: string): Promise<RawHttp & { keywordFound?: boolean }> {
   const t0 = performance.now()
   try {
     const res = await fetch(url, {
       method: 'GET',
       redirect: 'follow',
-      headers: { 'User-Agent': 'ServerPulse/0.1 (+health-check)' },
+      headers: { 'User-Agent': 'ServerPulse/0.4 (+health-check)' },
       signal: AbortSignal.timeout(timeoutSec * 1000)
     })
     const ms = Math.round(performance.now() - t0)
-    await res.body?.cancel().catch(() => undefined)
-    return { ok: res.status < 500, status: res.status, ms, error: res.status >= 500 ? `HTTP ${res.status}` : undefined }
+    if (!keyword) {
+      await res.body?.cancel().catch(() => undefined)
+      return { status: res.status, ms }
+    }
+    return { status: res.status, ms, keywordFound: (await readBodyPrefix(res)).includes(keyword) }
   } catch (e) {
     const err = e as Error & { cause?: { code?: string; message?: string } }
-    const msg = err.name === 'TimeoutError' ? 'Zaman aşımı' : (err.cause?.code ?? err.cause?.message ?? err.message)
-    return { ok: false, status: null, ms: null, error: msg }
+    const msg = err.name === 'TimeoutError' ? t('err.timeout') : (err.cause?.code ?? err.cause?.message ?? err.message)
+    return { status: null, ms: null, error: msg }
   }
 }
 
@@ -276,12 +357,13 @@ const httpPublic: CollectorDef = {
     await Promise.all(
       checksOf(projects, 'public').map(async (c) => {
         if (!c.url || !/^https?:\/\//.test(c.url)) {
-          state.http[c.id] = { checkId: c.id, ts: Date.now(), ok: false, status: null, ms: null, error: 'Geçersiz URL' }
+          setHttp(state, c.id, { ok: false, status: null, ms: null, error: t('err.badUrlShort') })
           return
         }
-        const res = await fetchCheck(c.url, settings.thresholds.httpTimeoutSec)
-        state.http[c.id] = { checkId: c.id, ts: Date.now(), ...res }
-        history.addHttp(c.id, Date.now(), res.status, res.ms)
+        const raw = await fetchCheck(c.url, settings.thresholds.httpTimeoutSec, c.keyword || undefined)
+        const res = judgeHttp(raw, c, raw.keywordFound)
+        setHttp(state, c.id, res)
+        history.addHttp(c.id, Date.now(), res.status, res.ms, res.ok)
       })
     )
   }
@@ -294,7 +376,7 @@ export function readCertificate(host: string, port = 443, timeoutMs = 10000): Pr
       const authorized = sock.authorized
       const authErr = sock.authorizationError ? String(sock.authorizationError) : undefined
       sock.end()
-      if (!cert || !cert.valid_to) return reject(new Error('Sertifika okunamadı'))
+      if (!cert || !cert.valid_to) return reject(new Error(t('err.certUnreadable')))
       const validTo = new Date(cert.valid_to)
       resolve({
         validTo: validTo.toISOString(),
@@ -305,7 +387,7 @@ export function readCertificate(host: string, port = 443, timeoutMs = 10000): Pr
     })
     sock.on('timeout', () => {
       sock.destroy()
-      reject(new Error('TLS zaman aşımı'))
+      reject(new Error(t('err.tlsTimeout')))
     })
     sock.on('error', reject)
   })
@@ -349,15 +431,18 @@ const postgres: CollectorDef = {
         const sec = parseSections(r.stdout)
         const ready = parsePgIsReady(sec.ready?.out ?? '', sec.ready?.rc ?? null)
         const connsOk = sec.conns?.rc === 0
+        const prev = state.postgres[p.id]?.failures ?? 0
         state.postgres[p.id] = {
           ts,
           ready,
           connections: connsOk ? parseSingleInt(sec.conns.out) : null,
           databases: sec.sizes?.rc === 0 ? parseDbSizes(sec.sizes.out) : [],
-          error: ready === false ? sec.ready?.out.trim() : !connsOk ? sec.conns?.out.split('\n')[0] : undefined
+          error: ready === false ? sec.ready?.out.trim() : !connsOk ? sec.conns?.out.split('\n')[0] : undefined,
+          failures: ready === false ? prev + 1 : 0
         }
       } catch (e) {
-        state.postgres[p.id] = { ts, ready: null, connections: null, databases: [], error: (e as Error).message }
+        // Bilinmeyen durum: sayaç korunur (ne artar ne sıfırlanır)
+        state.postgres[p.id] = { ts, ready: null, connections: null, databases: [], error: (e as Error).message, failures: state.postgres[p.id]?.failures }
       }
     }
   }
@@ -383,8 +468,8 @@ const asterisk: CollectorDef = {
         registrations: [],
         endpoints: [],
         error: isSudoDenied(ch?.out ?? '')
-          ? 'sudoers kuralı yok; sadece systemd durumu gösteriliyor'
-          : (ch?.out.split('\n')[0] ?? 'asterisk -rx başarısız')
+          ? t('err.astNoSudoers')
+          : (ch?.out.split('\n')[0] ?? t('err.astFailed'))
       }
       return
     }
@@ -398,4 +483,33 @@ const asterisk: CollectorDef = {
   }
 }
 
-export const COLLECTORS: CollectorDef[] = [reach, host, docker, dockerMeta, systemd, httpLocal, httpPublic, ssl, postgres, asterisk]
+const storage: CollectorDef = {
+  name: 'storage',
+  needsSsh: true,
+  intervalMs: (s) => s.intervals.slowSec * 1000,
+  enabled: () => true,
+  async run({ conn, state }) {
+    const sec = parseSections((await conn.exec(buildScript(CMD.storage()), 60000)).stdout)
+    state.storage = { ts: Date.now(), inodes: parseInodes(sec.inodes?.out ?? ''), noLogRotation: parseNoLogRotation(sec.logcfg?.out ?? '') }
+  }
+}
+
+const security: CollectorDef = {
+  name: 'security',
+  needsSsh: true,
+  intervalMs: (s) => s.intervals.slowSec * 1000,
+  enabled: () => true,
+  async run({ conn, state }) {
+    const sec = parseSections((await conn.exec(buildScript(CMD.security()), 60000)).stdout)
+    state.security = {
+      ts: Date.now(),
+      auth: parseAuthFailures(sec.auth?.out ?? ''),
+      sshd: parseSshdConfig(sec.sshd?.out ?? ''),
+      fail2ban: (sec.f2b?.out.trim().split('\n')[0] || 'unknown').trim(),
+      unattended: (sec.uu?.out.trim().split('\n')[0] || 'unknown').trim(),
+      ports: sec.ports?.rc === 0 ? parseListenPorts(sec.ports.out) : (state.security?.ports ?? [])
+    }
+  }
+}
+
+export const COLLECTORS: CollectorDef[] = [reach, host, docker, dockerMeta, systemd, httpLocal, httpPublic, ssl, postgres, asterisk, storage, security]

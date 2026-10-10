@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { Severity } from '@shared/types'
-import { SEV_LABEL } from '../lib/health'
+import { sevLabel } from '../lib/health'
+import { fmtPct } from '../lib/format'
 
 const SEV_VAR: Record<Severity, string> = {
   ok: 'var(--good)',
@@ -20,8 +21,8 @@ export function StatusDot({ sev, size = 14, title }: { sev: Severity; size?: num
   return (
     <span
       role="img"
-      aria-label={title ?? SEV_LABEL[sev]}
-      title={title ?? SEV_LABEL[sev]}
+      aria-label={title ?? sevLabel(sev)}
+      title={title ?? sevLabel(sev)}
       className="inline-flex shrink-0 items-center justify-center rounded-full font-bold text-white"
       style={{ width: size, height: size, background: SEV_VAR[sev], fontSize: size * 0.62, lineHeight: 1 }}
     >
@@ -34,7 +35,7 @@ export function SevBadge({ sev, label }: { sev: Severity; label: string }): Reac
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-2 py-0.5 pr-2.5 pl-1 text-xs font-medium text-ink"
-      title={`${label}: ${SEV_LABEL[sev]}`}
+      title={`${label}: ${sevLabel(sev)}`}
     >
       <StatusDot sev={sev} size={14} />
       {label}
@@ -53,7 +54,7 @@ export function MiniBar({ label, pct, warnAt, critAt, suffix }: { label: string;
         <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${v}%`, background: color }} />
       </div>
       <span className="tnum w-16 shrink-0 text-right text-ink-2">
-        {pct == null ? '—' : `%${Math.round(pct)}`}
+        {pct == null ? '—' : fmtPct(pct)}
         {suffix ? <span className="text-muted"> {suffix}</span> : null}
       </span>
     </div>
@@ -102,6 +103,44 @@ export function Field({ label, hint, children }: { label: string; hint?: ReactNo
       {children}
       {hint ? <span className="text-[11px] text-muted">{hint}</span> : null}
     </label>
+  )
+}
+
+/**
+ * Sayı alanı: yazarken değeri sınırlamaz (aksi halde "85" → "8" anında min'e atlar);
+ * yalnızca odak kaybında ya da Enter'da [min, max] aralığına çeker ve onChange'i çağırır.
+ */
+export function NumField({ value, onChange, min, max, className }: { value: number; onChange: (v: number) => void; min: number; max: number; className?: string }): ReactNode {
+  const [text, setText] = useState(String(value))
+  const [focused, setFocused] = useState(false)
+  // Dışarıdan gelen değer (kayıt sonrası vb.) değişirse, kullanıcı yazmıyorsa göster
+  useEffect(() => {
+    if (!focused) setText(String(value))
+  }, [value, focused])
+  const commit = (): void => {
+    const n = Number(text.replace(',', '.'))
+    const v = text.trim() === '' || !Number.isFinite(n) ? value : Math.max(min, Math.min(max, n))
+    setText(String(v))
+    if (v !== value) onChange(v)
+  }
+  return (
+    <input
+      type="number"
+      inputMode="numeric"
+      className={className}
+      min={min}
+      max={max}
+      value={text}
+      onFocus={() => setFocused(true)}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => {
+        setFocused(false)
+        commit()
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit()
+      }}
+    />
   )
 }
 

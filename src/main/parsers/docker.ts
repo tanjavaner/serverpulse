@@ -103,6 +103,10 @@ export function parseDockerPs(out: string): ContainerInfo[] {
         lastRestartIncreaseAt: null,
         composeProject: labels['com.docker.compose.project'],
         workingDir: labels['com.docker.compose.project.working_dir'],
+        composeFiles: labels['com.docker.compose.project.config_files']
+          ?.split(',')
+          .map((f) => f.trim())
+          .filter(Boolean),
         ports: r.Ports ?? '',
         cpuPct: null,
         memBytes: null,

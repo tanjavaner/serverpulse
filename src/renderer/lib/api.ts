@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { RendererApi } from '@shared/ipc'
 import type { AppSnapshot } from '@shared/types'
+import { getLang, isLang, resolveLang, setLang, type LangSetting } from '@shared/i18n'
 
 declare global {
   interface Window {
@@ -37,4 +38,25 @@ export function useTheme(theme: 'system' | 'light' | 'dark' | undefined): void {
     mq.addEventListener('change', apply)
     return () => mq.removeEventListener('change', apply)
   }, [theme])
+}
+
+/**
+ * Etkin dili ayarlar. Kökte (App/Widget) render sırasında çağrılır; snapshot her geldiğinde ağaç yeniden
+ * çizildiği için dil değişikliği tüm bileşenlere yansır. Snapshot gelene kadar main'in URL'ye koyduğu dil geçerlidir.
+ */
+export function applyLang(setting: LangSetting | undefined): void {
+  if (!setting) return
+  const lang = resolveLang(setting, navigator.language)
+  if (lang === getLang()) return
+  setLang(lang)
+  document.documentElement.lang = lang
+}
+
+/** Main process pencereyi açarken "?lang=" ile o anki dili verir (ilk çizimde yanlış dil görünmesin). */
+export function initLangFromUrl(): void {
+  const q = new URLSearchParams(location.search).get('lang')
+  if (isLang(q)) {
+    setLang(q)
+    document.documentElement.lang = q
+  }
 }

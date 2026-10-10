@@ -1,13 +1,7 @@
 import { Menu, Tray, nativeImage } from 'electron'
 import type { Severity } from '@shared/types'
+import { t } from '@shared/i18n'
 import { trayPng } from './icons'
-
-const LABEL: Record<Severity, string> = {
-  ok: 'Her şey yolunda',
-  warn: 'Uyarı var',
-  crit: 'Kritik sorun var',
-  unknown: 'Durum bilinmiyor'
-}
 
 function image(sev: Severity): Electron.NativeImage {
   const img = nativeImage.createEmpty()
@@ -30,6 +24,7 @@ export class AppTray {
   private cache = new Map<Severity, Electron.NativeImage>()
   private menu: Menu
   private updateVersion: string | null = null
+  private last: { sev: Severity; count: number } = { sev: 'unknown', count: 0 }
 
   constructor(private actions: TrayActions) {
     this.tray = new Tray(this.icon('unknown'))
@@ -49,23 +44,29 @@ export class AppTray {
   private buildMenu(): Menu {
     const a = this.actions
     const update: Electron.MenuItemConstructorOptions[] = this.updateVersion
-      ? [{ label: `Yeniden başlat ve güncelle (v${this.updateVersion})`, click: a.installUpdate }, { type: 'separator' }]
+      ? [{ label: t('tray.installUpdate', { v: this.updateVersion }), click: a.installUpdate }, { type: 'separator' }]
       : []
     return Menu.buildFromTemplate([
       ...update,
-      { label: 'Widget’ı göster/gizle', click: a.toggleWidget },
-      { label: 'Dashboard', click: a.openDashboard },
-      { label: 'Şimdi yenile', click: a.refresh },
-      { label: 'Güncellemeleri denetle', click: a.checkUpdates },
+      { label: t('tray.toggleWidget'), click: a.toggleWidget },
+      { label: t('tray.dashboard'), click: a.openDashboard },
+      { label: t('tray.refresh'), click: a.refresh },
+      { label: t('tray.checkUpdates'), click: a.checkUpdates },
       { type: 'separator' },
-      { label: 'Çıkış', click: a.quit }
+      { label: t('tray.quit'), click: a.quit }
     ])
   }
 
   setUpdateReady(version: string): void {
     this.updateVersion = version
+    this.rebuild()
+  }
+
+  /** Dil değişince menü ve ipucu metnini yeniden üretir. */
+  rebuild(): void {
     this.menu = this.buildMenu()
     if (process.platform !== 'darwin') this.tray.setContextMenu(this.menu)
+    this.setSeverity(this.last.sev, this.last.count)
   }
 
   private icon(sev: Severity): Electron.NativeImage {
@@ -78,9 +79,10 @@ export class AppTray {
   }
 
   setSeverity(sev: Severity, issueCount: number): void {
+    this.last = { sev, count: issueCount }
     this.tray.setImage(this.icon(sev))
-    const update = this.updateVersion ? ` · v${this.updateVersion} hazır` : ''
-    this.tray.setToolTip(`ServerPulse: ${LABEL[sev]}${issueCount ? ` (${issueCount} sorun)` : ''}${update}`)
+    const update = this.updateVersion ? t('tray.updateReady', { v: this.updateVersion }) : ''
+    this.tray.setToolTip(`ServerPulse: ${t(`tray.${sev}`)}${issueCount ? t('tray.issues', { n: issueCount }) : ''}${update}`)
   }
 
   destroy(): void {

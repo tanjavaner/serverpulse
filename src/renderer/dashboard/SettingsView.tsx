@@ -1,105 +1,122 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import type { AppSettings, AppSnapshot, RemoteNotifySettings, UpdateStatus } from '@shared/types'
+import { SETTINGS_LIMITS, type AppSettings, type AppSnapshot, type RemoteNotifySettings, type UpdateStatus } from '@shared/types'
+import { t } from '@shared/i18n'
 import { api } from '../lib/api'
-import { Alert, Button, Card, Field, SectionTitle, Toggle } from '../components/ui'
+import { Alert, Button, Card, Field, NumField, SectionTitle, Toggle } from '../components/ui'
 import { cleanErr } from './ServerForm'
+import { TransferCard } from './TransferCard'
+
+type IntervalKey = keyof AppSettings['intervals']
+type ThresholdKey = keyof AppSettings['thresholds']
 
 export function SettingsView({ snap }: { snap: AppSnapshot }): ReactNode {
+  // Taslak yalnızca açılışta ve kayıttan sonra snapshot'tan alınır; snapshot birkaç saniyede bir geldiği için
+  // her gelişte kopyalanırsa kaydedilmemiş değişiklikler silinir.
   const [s, setS] = useState<AppSettings>(snap.settings)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  useEffect(() => setS(snap.settings), [snap.settings])
 
-  const num = (v: string, min: number, max: number): number => Math.max(min, Math.min(max, Number(v) || min))
-  const setI = (k: keyof AppSettings['intervals'], v: number): void => setS({ ...s, intervals: { ...s.intervals, [k]: v } })
-  const setT = (k: keyof AppSettings['thresholds'], v: number): void => setS({ ...s, thresholds: { ...s.thresholds, [k]: v } })
+  const setI = (k: IntervalKey, v: number): void => setS((prev) => ({ ...prev, intervals: { ...prev.intervals, [k]: v } }))
+  const setT = (k: ThresholdKey, v: number): void => setS((prev) => ({ ...prev, thresholds: { ...prev.thresholds, [k]: v } }))
+  const numI = (k: IntervalKey): ReactNode => <NumField value={s.intervals[k]} min={SETTINGS_LIMITS.intervals[k][0]} max={SETTINGS_LIMITS.intervals[k][1]} onChange={(v) => setI(k, v)} />
+  const numT = (k: ThresholdKey): ReactNode => <NumField value={s.thresholds[k]} min={SETTINGS_LIMITS.thresholds[k][0]} max={SETTINGS_LIMITS.thresholds[k][1]} onChange={(v) => setT(k, v)} />
 
-  const save = async (patch: Partial<AppSettings> = s): Promise<void> => {
+  const flashSaved = (): void => {
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const save = async (): Promise<void> => {
     setError(null)
     try {
-      setS(await api.invoke('settings:save', patch))
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
+      setS(await api.invoke('settings:save', s))
+      flashSaved()
     } catch (e) {
       setError(cleanErr(e))
     }
   }
 
-  // Anahtar/tema değişiklikleri anında uygulanır
+  // Anahtar/tema değişiklikleri anında uygulanır; taslaktaki diğer (kaydedilmemiş) alanlara dokunulmaz
   const instant = (patch: Partial<AppSettings>): void => {
-    setS({ ...s, ...patch })
-    void save(patch)
+    setS((prev) => ({ ...prev, ...patch }))
+    setError(null)
+    api.invoke('settings:save', patch).then(flashSaved, (e: unknown) => setError(cleanErr(e)))
   }
 
   return (
     <div className="flex max-w-3xl flex-col gap-4">
-      <h1 className="text-xl font-bold">Ayarlar</h1>
+      <h1 className="text-xl font-bold">{t('nav.settings')}</h1>
 
       <Card className="flex flex-col gap-3">
-        <SectionTitle>Genel</SectionTitle>
-        <Field label="Tema">
-          <select value={s.theme} onChange={(e) => instant({ theme: e.target.value as AppSettings['theme'] })} className="w-48">
-            <option value="system">Sistem</option>
-            <option value="light">Açık</option>
-            <option value="dark">Koyu</option>
-          </select>
-        </Field>
-        <Toggle checked={s.notifications} onChange={(v) => instant({ notifications: v })} label="Masaüstü bildirimleri" hint="Sadece durum değiştiğinde (debounce sonrası) gönderilir." />
-        <Toggle checked={s.openAtLogin} onChange={(v) => instant({ openAtLogin: v })} label="Bilgisayar açılınca başlat" hint="Sadece kurulu (paketli) sürümde etkilidir." />
-        <Toggle checked={s.widgetAlwaysOnTop} onChange={(v) => instant({ widgetAlwaysOnTop: v })} label="Widget her zaman üstte" />
-        <Toggle checked={s.widgetShowOnStart} onChange={(v) => instant({ widgetShowOnStart: v })} label="Açılışta widget'ı göster" />
+        <SectionTitle>{t('settings.general')}</SectionTitle>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <Field label={t('settings.theme')}>
+            <select value={s.theme} onChange={(e) => instant({ theme: e.target.value as AppSettings['theme'] })} className="w-48">
+              <option value="system">{t('common.system')}</option>
+              <option value="light">{t('settings.themeLight')}</option>
+              <option value="dark">{t('settings.themeDark')}</option>
+            </select>
+          </Field>
+          <Field label={t('settings.language')}>
+            <select value={s.language} onChange={(e) => instant({ language: e.target.value as AppSettings['language'] })} className="w-48">
+              <option value="system">{t('common.system')}</option>
+              <option value="tr">Türkçe</option>
+              <option value="en">English</option>
+            </select>
+          </Field>
+        </div>
+        <Toggle checked={s.notifications} onChange={(v) => instant({ notifications: v })} label={t('settings.notifications')} hint={t('settings.notificationsHint')} />
+        <Toggle checked={s.openAtLogin} onChange={(v) => instant({ openAtLogin: v })} label={t('settings.openAtLogin')} hint={t('settings.openAtLoginHint')} />
+        <Toggle checked={s.widgetAlwaysOnTop} onChange={(v) => instant({ widgetAlwaysOnTop: v })} label={t('settings.widgetOnTop')} />
+        <Toggle checked={s.widgetShowOnStart} onChange={(v) => instant({ widgetShowOnStart: v })} label={t('settings.widgetOnStart')} />
         <Toggle
           checked={s.allowActions}
           onChange={(v) => instant({ allowActions: v })}
-          label="Yönetim eylemlerine izin ver (container restart, sunucu bakımı)"
-          hint="Her eylem ayrıca yerel bir onay penceresi ister. Varsayılan: kapalı."
+          label={t('settings.allowActions')}
+          hint={t('settings.allowActionsHint')}
         />
+        <Toggle checked={s.allowTerminal} onChange={(v) => instant({ allowTerminal: v })} label={t('settings.allowTerminal')} hint={t('settings.allowTerminalHint')} />
       </Card>
 
       <Card className="flex flex-col gap-3">
-        <SectionTitle>Toplama aralıkları</SectionTitle>
+        <SectionTitle>{t('settings.intervals')}</SectionTitle>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Field label="Hızlı (sn)" hint="host, docker">
-            <input type="number" value={s.intervals.fastSec} onChange={(e) => setI('fastSec', num(e.target.value, 2, 300))} />
+          <Field label={t('settings.fast')} hint="host, docker">
+            {numI('fastSec')}
           </Field>
-          <Field label="Orta (sn)" hint="erişim, http, systemd, db, asterisk">
-            <input type="number" value={s.intervals.mediumSec} onChange={(e) => setI('mediumSec', num(e.target.value, 10, 3600))} />
+          <Field label={t('settings.medium')} hint={t('settings.mediumHint')}>
+            {numI('mediumSec')}
           </Field>
-          <Field label="Yavaş (sn)" hint="docker system df">
-            <input type="number" value={s.intervals.slowSec} onChange={(e) => setI('slowSec', num(e.target.value, 60, 86400))} />
+          <Field label={t('settings.slow')} hint="docker system df, inode, güvenlik">
+            {numI('slowSec')}
           </Field>
-          <Field label="SSL (saat)">
-            <input type="number" value={s.intervals.sslHours} onChange={(e) => setI('sslHours', num(e.target.value, 1, 168))} />
-          </Field>
+          <Field label={t('settings.sslHours')}>{numI('sslHours')}</Field>
         </div>
+        <Toggle checked={s.lightMode} onChange={(v) => instant({ lightMode: v })} label={t('settings.lightMode')} hint={t('settings.lightModeHint')} />
       </Card>
 
       <Card className="flex flex-col gap-3">
-        <SectionTitle>Alarm eşikleri</SectionTitle>
+        <SectionTitle>{t('settings.thresholds')}</SectionTitle>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Field label="Disk (%)">
-            <input type="number" value={s.thresholds.diskPct} onChange={(e) => setT('diskPct', num(e.target.value, 50, 99))} />
+          <Field label="Disk (%)">{numT('diskPct')}</Field>
+          <Field label="RAM (%)">{numT('ramPct')}</Field>
+          <Field label={t('settings.ramDuration')}>{numT('ramDurationSec')}</Field>
+          <Field label={t('settings.sslDays')}>{numT('sslDays')}</Field>
+          <Field label={t('settings.httpTimeout')}>{numT('httpTimeoutSec')}</Field>
+          <Field label={t('settings.unreachable')}>{numT('unreachableAttempts')}</Field>
+          <Field label={t('settings.checkFail')} hint={t('settings.checkFailHint')}>
+            {numT('checkFailAttempts')}
           </Field>
-          <Field label="RAM (%)">
-            <input type="number" value={s.thresholds.ramPct} onChange={(e) => setT('ramPct', num(e.target.value, 50, 99))} />
+          <Field label={t('settings.debounce')} hint={t('settings.debounceHint')}>
+            {numT('debounceSec')}
           </Field>
-          <Field label="RAM süresi (sn)">
-            <input type="number" value={s.thresholds.ramDurationSec} onChange={(e) => setT('ramDurationSec', num(e.target.value, 0, 3600))} />
-          </Field>
-          <Field label="SSL (gün)">
-            <input type="number" value={s.thresholds.sslDays} onChange={(e) => setT('sslDays', num(e.target.value, 1, 90))} />
-          </Field>
-          <Field label="HTTP zaman aşımı (sn)">
-            <input type="number" value={s.thresholds.httpTimeoutSec} onChange={(e) => setT('httpTimeoutSec', num(e.target.value, 2, 60))} />
-          </Field>
-          <Field label="Erişilemez: ardışık deneme">
-            <input type="number" value={s.thresholds.unreachableAttempts} onChange={(e) => setT('unreachableAttempts', num(e.target.value, 1, 10))} />
-          </Field>
-          <Field label="Debounce (sn)" hint="Sorun bu süre boyunca sürerse bildirilir">
-            <input type="number" value={s.thresholds.debounceSec} onChange={(e) => setT('debounceSec', num(e.target.value, 0, 600))} />
-          </Field>
-          <Field label="Geçmiş saklama (saat)">
-            <input type="number" value={s.retentionHours} onChange={(e) => setS({ ...s, retentionHours: num(e.target.value, 1, 24 * 30) })} />
+          <Field label={t('settings.retention')}>
+            <NumField
+              value={s.retentionHours}
+              min={SETTINGS_LIMITS.retentionHours[0]}
+              max={SETTINGS_LIMITS.retentionHours[1]}
+              onChange={(v) => setS((prev) => ({ ...prev, retentionHours: v }))}
+            />
           </Field>
         </div>
       </Card>
@@ -107,12 +124,14 @@ export function SettingsView({ snap }: { snap: AppSnapshot }): ReactNode {
       {error ? <Alert kind="error">{error}</Alert> : null}
       <div className="flex items-center gap-2">
         <Button variant="primary" onClick={() => void save()}>
-          Kaydet
+          {t('common.save')}
         </Button>
-        {saved ? <span className="text-[12px] text-good">✓ Kaydedildi</span> : null}
+        {saved ? <span className="text-[12px] text-good">{t('common.saved')}</span> : null}
       </div>
 
       <RemoteNotifyCard settings={snap.settings.remoteNotify} />
+
+      <TransferCard />
 
       <UpdatesCard />
     </div>
@@ -123,6 +142,9 @@ function RemoteNotifyCard({ settings }: { settings: RemoteNotifySettings }): Rea
   const [tgOn, setTgOn] = useState(settings.telegram.enabled)
   const [chatId, setChatId] = useState(settings.telegram.chatId)
   const [token, setToken] = useState('')
+  const [commands, setCommands] = useState(settings.telegram.commands)
+  const [daily, setDaily] = useState(settings.telegram.dailySummary)
+  const [summaryTime, setSummaryTime] = useState(settings.telegram.summaryTime)
   const [whOn, setWhOn] = useState(settings.webhook.enabled)
   const [url, setUrl] = useState('')
   const [msg, setMsg] = useState<{ kind: 'error' | 'ok'; text: string } | null>(null)
@@ -143,14 +165,14 @@ function RemoteNotifyCard({ settings }: { settings: RemoteNotifySettings }): Rea
   const save = (extra: { clearToken?: boolean; clearUrl?: boolean } = {}): Promise<void> =>
     run(async () => {
       await api.invoke('notify:save', {
-        telegram: { enabled: tgOn, chatId, token: token || undefined, clearToken: extra.clearToken },
+        telegram: { enabled: tgOn, chatId, token: token || undefined, clearToken: extra.clearToken, commands, dailySummary: daily, summaryTime },
         webhook: { enabled: whOn, url: url || undefined, clearUrl: extra.clearUrl }
       })
       setToken('')
       setUrl('')
       if (extra.clearToken) setTgOn(false)
       if (extra.clearUrl) setWhOn(false)
-      return 'Kaydedildi'
+      return t('rn.saved')
     })
 
   const test = (): Promise<void> =>
@@ -158,47 +180,62 @@ function RemoteNotifyCard({ settings }: { settings: RemoteNotifySettings }): Rea
       const rs = await api.invoke('notify:test')
       const bad = rs.filter((r) => !r.ok)
       if (bad.length) throw new Error(bad.map((r) => `${r.channel}: ${r.error}`).join(' | '))
-      return `Test mesajı gönderildi (${rs.map((r) => r.channel).join(', ')})`
+      return t('rn.testSent', { ch: rs.map((r) => r.channel).join(', ') })
     })
 
   return (
     <Card className="flex flex-col gap-3">
-      <SectionTitle>Harici bildirimler</SectionTitle>
+      <SectionTitle>{t('rn.title')}</SectionTitle>
       <div className="text-[12px] text-ink-2">
-        Alarm açıldığında ve düzeldiğinde Telegram/webhook'a da mesaj gönderilir. Token ve URL işletim sisteminin güvenli depolamasında şifreli saklanır. Uygulama çalışıyor olmalıdır.
+        {t('rn.intro')}
       </div>
 
-      <Toggle checked={tgOn} onChange={setTgOn} label="Telegram" hint="@BotFather ile bot oluşturun, bota bir mesaj yazın; chat ID'yi @userinfobot veya getUpdates ile öğrenin." />
+      <Toggle checked={tgOn} onChange={setTgOn} label="Telegram" hint={t('rn.telegramHint')} />
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <Field label="Bot token" hint={settings.telegram.hasToken ? 'Kayıtlı. Değiştirmek için yeni değer yazın.' : undefined}>
+        <Field label="Bot token" hint={settings.telegram.hasToken ? t('rn.storedHint') : undefined}>
           <input type="password" autoComplete="off" placeholder={settings.telegram.hasToken ? '••••••••' : '123456789:AA...'} value={token} onChange={(e) => setToken(e.target.value)} />
         </Field>
         <Field label="Chat ID">
-          <input value={chatId} placeholder="123456789 veya -100..." onChange={(e) => setChatId(e.target.value)} />
+          <input value={chatId} placeholder={t('rn.chatIdPh')} onChange={(e) => setChatId(e.target.value)} />
         </Field>
       </div>
 
-      <Toggle checked={whOn} onChange={setWhOn} label="Webhook (Slack, Discord, Mattermost, özel)" hint="JSON POST: event, severity, title, detail, server, text, content." />
-      <Field label="Webhook URL" hint={settings.webhook.hasUrl ? 'Kayıtlı. Değiştirmek için yeni değer yazın.' : undefined}>
+      {tgOn ? (
+        <div className="flex flex-col gap-2 border-l-2 border-line pl-3">
+          <Toggle checked={commands} onChange={setCommands} label={t('rn.commands')} hint={t('rn.commandsHint')} />
+          <div className="flex flex-wrap items-center gap-3">
+            <Toggle checked={daily} onChange={setDaily} label={t('rn.daily')} hint={t('rn.dailyHint')} />
+            {daily ? (
+              <label className="flex items-center gap-1.5 text-[12px] text-ink-2">
+                {t('rn.dailyTime')}
+                <input type="time" value={summaryTime} onChange={(e) => setSummaryTime(e.target.value)} />
+              </label>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      <Toggle checked={whOn} onChange={setWhOn} label={t('rn.webhook')} hint="JSON POST: event, severity, title, detail, server, text, content." />
+      <Field label="Webhook URL" hint={settings.webhook.hasUrl ? t('rn.storedHint') : undefined}>
         <input type="password" autoComplete="off" placeholder={settings.webhook.hasUrl ? '••••••••' : 'https://...'} value={url} onChange={(e) => setUrl(e.target.value)} />
       </Field>
 
       {msg ? <Alert kind={msg.kind}>{msg.text}</Alert> : null}
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="primary" disabled={busy} onClick={() => void save()}>
-          Kaydet
+          {t('common.save')}
         </Button>
         <Button disabled={busy || (!settings.telegram.hasToken && !settings.webhook.hasUrl)} onClick={() => void test()}>
-          Test mesajı gönder
+          {t('rn.sendTest')}
         </Button>
         {settings.telegram.hasToken ? (
           <Button disabled={busy} onClick={() => void save({ clearToken: true })}>
-            Telegram token'ını sil
+            {t('rn.deleteToken')}
           </Button>
         ) : null}
         {settings.webhook.hasUrl ? (
           <Button disabled={busy} onClick={() => void save({ clearUrl: true })}>
-            Webhook URL'sini sil
+            {t('rn.deleteUrl')}
           </Button>
         ) : null}
       </div>
@@ -209,19 +246,19 @@ function RemoteNotifyCard({ settings }: { settings: RemoteNotifySettings }): Rea
 function updateText(u: UpdateStatus): string {
   switch (u.state) {
     case 'disabled':
-      return 'Geliştirme modunda otomatik güncelleme kapalı.'
+      return t('upd.disabled')
     case 'idle':
-      return 'Henüz denetlenmedi.'
+      return t('upd.idle')
     case 'checking':
-      return 'Denetleniyor…'
+      return t('upd.checking')
     case 'downloading':
-      return `v${u.version ?? '?'} indiriliyor… %${u.percent ?? 0}`
+      return t('upd.downloading', { v: u.version ?? '?', p: u.percent ?? 0 })
     case 'ready':
-      return `v${u.version} indirildi. Yeniden başlatınca kurulur (kapatınca da otomatik kurulur).`
+      return t('upd.ready', { v: u.version })
     case 'uptodate':
-      return 'Güncel sürümü kullanıyorsunuz.'
+      return t('upd.uptodate')
     case 'error':
-      return `Denetim başarısız: ${u.error ?? 'bilinmeyen hata'}`
+      return t('upd.error', { e: u.error ?? t('upd.unknownError') })
   }
 }
 
@@ -235,19 +272,19 @@ function UpdatesCard(): ReactNode {
   const busy = u.state === 'checking' || u.state === 'downloading'
   return (
     <Card className="flex flex-col gap-3">
-      <SectionTitle>Güncellemeler</SectionTitle>
+      <SectionTitle>{t('upd.title')}</SectionTitle>
       <div className="text-[13px]">
-        Kurulu sürüm: <b>v{u.current}</b>
+        {t('upd.installed')} <b>v{u.current}</b>
       </div>
       <div className={`text-[12px] ${u.state === 'error' ? 'text-critical' : 'text-ink-2'}`}>{updateText(u)}</div>
       <div className="flex items-center gap-2">
         {u.state === 'ready' ? (
           <Button variant="primary" onClick={() => void api.invoke('update:install')}>
-            Yeniden başlat ve güncelle
+            {t('upd.restartInstall')}
           </Button>
         ) : (
           <Button disabled={u.state === 'disabled' || busy} onClick={() => void api.invoke('update:check')}>
-            Şimdi denetle
+            {t('upd.checkNow')}
           </Button>
         )}
       </div>

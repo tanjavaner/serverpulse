@@ -1,4 +1,5 @@
 import type { AsteriskState, SystemdUnitState } from '@shared/types'
+import { t } from '@shared/i18n'
 
 // ---------------------------------------------------------------------------
 // systemd
@@ -40,9 +41,9 @@ export function parseCurl(out: string, rc: number | null): { ok: boolean; status
   const m = /(\d{3})\s+([\d.]+)\s*$/.exec(out.trim())
   const status = m ? Number(m[1]) : null
   const ms = m ? Math.round(Number(m[2]) * 1000) : null
-  if (status == null) return { ok: false, status: null, ms: null, error: `curl çıktısı anlaşılamadı (rc=${rc})` }
+  if (status == null) return { ok: false, status: null, ms: null, error: t('err.curlUnparsed', { rc }) }
   if (status === 0) {
-    const err = rc === 28 ? 'Zaman aşımı' : rc === 7 ? 'Bağlantı reddedildi' : `curl hata kodu ${rc}`
+    const err = rc === 28 ? t('err.timeout') : rc === 7 ? t('err.connRefused') : t('err.curlCode', { rc })
     return { ok: false, status: null, ms, error: err }
   }
   return { ok: status < 500, status, ms, error: status >= 500 ? `HTTP ${status}` : undefined }

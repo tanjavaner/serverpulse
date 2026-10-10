@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { AppSnapshot } from '@shared/types'
-import { api, useSnapshot, useTheme } from '../lib/api'
-import { projectSeverity, serverSeverity, SEV_LABEL } from '../lib/health'
-import { StatusDot } from '../components/ui'
+import { api, applyLang, useSnapshot, useTheme } from '../lib/api'
+import { t } from '@shared/i18n'
+import { projectSeverity, serverSeverity, sevLabel } from '../lib/health'
+import { Alert, StatusDot } from '../components/ui'
 import { ServerView } from './ServerView'
 import { ProjectView } from './ProjectView'
 import { ServerForm } from './ServerForm'
@@ -26,6 +27,7 @@ export type Nav = (r: Route) => void
 
 export function App(): ReactNode {
   const snap = useSnapshot()
+  applyLang(snap?.settings.language)
   useTheme(snap?.settings.theme)
   const [route, setRoute] = useState<Route>(() => {
     const id = new URLSearchParams(location.search).get('server')
@@ -41,13 +43,23 @@ export function App(): ReactNode {
     else setRoute({ view: 'server', serverId: snap.servers[0].id })
   }, [snap, route.view])
 
-  if (!snap) return <div className="flex h-full items-center justify-center text-ink-2">Yükleniyor…</div>
+  if (!snap) return <div className="flex h-full items-center justify-center text-ink-2">{t('common.loading')}</div>
 
   return (
     <div className="flex h-full bg-page text-ink">
       <Sidebar snap={snap} route={route} nav={setRoute} />
       <main className="min-w-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-[1200px] px-6 py-5">
+          {/* Sunucuya bağlı olmayan (bu bilgisayarla ilgili) sorunlar her ekranın üstünde */}
+          {snap.issues
+            .filter((i) => !i.serverId)
+            .map((i) => (
+              <div key={i.key} className="mb-4">
+                <Alert kind="warn">
+                  <b>{i.title}</b> · {i.detail}
+                </Alert>
+              </div>
+            ))}
           <Content snap={snap} route={route} nav={setRoute} />
         </div>
       </main>
@@ -92,9 +104,9 @@ function Content({ snap, route, nav }: { snap: AppSnapshot; route: Route; nav: N
 function NotFound({ nav }: { nav: Nav }): ReactNode {
   return (
     <div className="text-ink-2">
-      Bulunamadı.{' '}
+      {t('common.notFound')}{' '}
       <button className="text-accent" onClick={() => nav({ view: 'home' })}>
-        Ana sayfaya dön
+        {t('common.backHome')}
       </button>
     </div>
   )
@@ -109,11 +121,11 @@ function Sidebar({ snap, route, nav }: { snap: AppSnapshot; route: Route; nav: N
         <StatusDot sev={snap.overall} size={16} />
         <div className="flex flex-col leading-tight">
           <span className="text-sm font-bold">ServerPulse</span>
-          <span className="text-[11px] text-muted">{SEV_LABEL[snap.overall]}</span>
+          <span className="text-[11px] text-muted">{sevLabel(snap.overall)}</span>
         </div>
       </div>
       <nav className="flex-1 overflow-y-auto px-2">
-        <div className="px-2 pb-1 text-[11px] font-semibold tracking-wide text-muted uppercase">Sunucular</div>
+        <div className="px-2 pb-1 text-[11px] font-semibold tracking-wide text-muted uppercase">{t('nav.servers')}</div>
         {snap.servers.map((s) => {
           const st = snap.states[s.id]
           const projects = snap.projects.filter((p) => p.serverId === s.id)
@@ -133,16 +145,16 @@ function Sidebar({ snap, route, nav }: { snap: AppSnapshot; route: Route; nav: N
           )
         })}
         <button className="mt-1 w-full rounded-md px-2 py-1.5 text-left text-[13px] text-accent hover:bg-surface-2" onClick={() => nav({ view: 'addServer' })}>
-          + Sunucu ekle
+          {t('nav.addServer')}
         </button>
       </nav>
       <div className="border-t border-line p-2">
         <NavItem active={route.view === 'events'} onClick={() => nav({ view: 'events' })}>
-          <span className="w-3 text-center">⚑</span> Olaylar
+          <span className="w-3 text-center">⚑</span> {t('nav.events')}
           {snap.issues.length ? <span className="ml-auto rounded-full bg-critical px-1.5 text-[10px] font-bold text-white">{snap.issues.length}</span> : null}
         </NavItem>
         <NavItem active={route.view === 'settings'} onClick={() => nav({ view: 'settings' })}>
-          <span className="w-3 text-center">⚙</span> Ayarlar
+          <span className="w-3 text-center">⚙</span> {t('nav.settings')}
         </NavItem>
       </div>
     </aside>

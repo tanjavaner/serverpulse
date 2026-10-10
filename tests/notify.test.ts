@@ -64,8 +64,9 @@ describe('harici bildirim', () => {
 
   it('ayar birleştirme: kısmi remoteNotify diğer alanları ezmez; varsayılanda kapalı', () => {
     expect(DEFAULT_SETTINGS.remoteNotify.telegram.enabled).toBe(false)
-    const merged = mergeSettings(DEFAULT_SETTINGS, { remoteNotify: { telegram: { enabled: true, chatId: '1', hasToken: true }, webhook: DEFAULT_SETTINGS.remoteNotify.webhook } })
-    expect(merged.remoteNotify.telegram).toEqual({ enabled: true, chatId: '1', hasToken: true })
+    const telegram = { ...DEFAULT_SETTINGS.remoteNotify.telegram, enabled: true, chatId: '1', hasToken: true }
+    const merged = mergeSettings(DEFAULT_SETTINGS, { remoteNotify: { telegram, webhook: DEFAULT_SETTINGS.remoteNotify.webhook } })
+    expect(merged.remoteNotify.telegram).toEqual(telegram)
     expect(merged.remoteNotify.webhook.enabled).toBe(false)
     // eski config.json (remoteNotify yok) varsayılanlarla açılır
     expect(mergeSettings(DEFAULT_SETTINGS, { retentionHours: 5 }).remoteNotify).toEqual(DEFAULT_SETTINGS.remoteNotify)

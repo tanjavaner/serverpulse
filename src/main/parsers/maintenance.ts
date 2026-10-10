@@ -73,3 +73,21 @@ export function parseUpgradePoll(stdout: string): { rc: number | null; size: num
   if (!m) return { rc: null, size: null, chunk: '' }
   return { rc: m[1] === '' ? null : Number(m[1]), size: Number(m[2]), chunk: stdout.slice(m[0].length) }
 }
+
+/** CMD.maintRestore çıktısı: "@@ERR\n<hata satırları>\n@@TAIL\n<son satırlar>" */
+export function parseRestoreOutput(stdout: string): { errors: string[]; tail: string } {
+  const i = stdout.indexOf('@@ERR')
+  const j = stdout.indexOf('@@TAIL')
+  if (i < 0 || j < i) return { errors: [], tail: stdout.trim() }
+  return { errors: lines(stdout.slice(i + 5, j)), tail: stdout.slice(j + 6).trim() }
+}
+
+/**
+ * pg_dumpall yedeği dolu bir kümeye yüklenirken "role/database/relation ... already exists" gibi
+ * hatalar beklenir; asıl sorun veri hatalarıdır (duplicate key, syntax error, permission denied …).
+ */
+export function summarizeRestoreErrors(errors: string[]): { expected: number; real: string[] } {
+  const benign = /already exists|multiple primary keys for table/i
+  const real = errors.filter((e) => !benign.test(e))
+  return { expected: errors.length - real.length, real }
+}

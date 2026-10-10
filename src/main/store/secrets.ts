@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { safeStorage } from 'electron'
+import { t } from '@shared/i18n'
 import type { Credentials } from '../ssh/connection'
 import { writeJsonAtomic } from './config'
 
@@ -25,7 +26,7 @@ export class SecretStore {
 
   private ensureAvailable(): void {
     if (!safeStorage.isEncryptionAvailable()) {
-      throw new Error('İşletim sisteminin güvenli depolaması kullanılamıyor; kimlik bilgisi kaydedilmedi.')
+      throw new Error(t('err.secureStorage'))
     }
   }
 

@@ -1,63 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { AppSnapshot, BackupInfo, MaintResult, MaintStatus, MaintStep, PostcheckResult, ServerConfig } from '@shared/types'
+import { t } from '@shared/i18n'
 import { api } from '../lib/api'
 import { ago, dateTime, fmtBytes } from '../lib/format'
 import { useNow } from '../lib/hooks'
 import { Alert, Button, Card, SectionTitle } from '../components/ui'
 import { cleanErr } from './ServerForm'
+import { LiveLog } from './LiveLog'
+import { pushLocal, stepLabel, useMaintLog } from '../lib/maintLog'
 
-const STEP_LABEL: Record<MaintStep, string> = {
-  status: 'Durum kontrolü',
-  backup: 'Yedek',
-  upgrade: 'Güncelleme',
-  reboot: 'Reboot',
-  postcheck: 'Reboot sonrası kontrol',
-  autoremove: 'autoremove',
-  restore: 'Geri yükleme'
-}
-const MAX_LINES = 3000
 const DAY_MS = 24 * 3600_000
-
-// Canlı çıktı sekme değişiminde kaybolmasın diye modül seviyesinde tutulur
-interface LogLine {
-  ts: number
-  step: MaintStep
-  text: string
-}
-const logStore = new Map<string, LogLine[]>()
-const listeners = new Set<() => void>()
-let subscribed = false
-function ensureSubscribed(): void {
-  if (subscribed) return
-  subscribed = true
-  api.onMaint((e) => {
-    if (e.line === undefined) return
-    const arr = logStore.get(e.serverId) ?? []
-    arr.push({ ts: Date.now(), step: e.step, text: e.line })
-    if (arr.length > MAX_LINES) arr.splice(0, arr.length - MAX_LINES)
-    logStore.set(e.serverId, arr)
-    for (const l of listeners) l()
-  })
-}
-function pushLocal(serverId: string, step: MaintStep, text: string): void {
-  const arr = logStore.get(serverId) ?? []
-  arr.push({ ts: Date.now(), step, text })
-  logStore.set(serverId, arr)
-  for (const l of listeners) l()
-}
-
-function useMaintLog(serverId: string): LogLine[] {
-  const [, setTick] = useState(0)
-  useEffect(() => {
-    ensureSubscribed()
-    const l = (): void => setTick((x) => x + 1)
-    listeners.add(l)
-    return () => {
-      listeners.delete(l)
-    }
-  }, [])
-  return logStore.get(serverId) ?? []
-}
 
 type Panel = null | 'reboot' | 'upgradeNoBackup'
 
@@ -81,10 +33,14 @@ export function MaintenanceTab({ snap, server }: { snap: AppSnapshot; server: Se
 
   const report = (step: MaintStep, r: MaintResult): boolean => {
     if (r.cancelled) {
-      setMsg({ kind: 'warn', text: `${STEP_LABEL[step]} iptal edildi` })
+      setMsg({ kind: 'warn', text: t('maint.cancelled', { s: stepLabel(step) }) })
       return false
     }
-    setMsg(r.ok ? { kind: 'ok', text: `${STEP_LABEL[step]} tamamlandı${r.summary ? `: ${r.summary}` : ''}` } : { kind: 'error', text: `${STEP_LABEL[step]} başarısız: ${r.error ?? ''}` })
+    setMsg(
+      r.ok
+        ? { kind: 'ok', text: r.summary ? t('maint.doneSummary', { s: stepLabel(step), sum: r.summary }) : t('maint.done', { s: stepLabel(step) }) }
+        : { kind: 'error', text: t('maint.failed', { s: stepLabel(step), e: r.error ?? '' }) }
+    )
     return r.ok
   }
 
@@ -92,7 +48,7 @@ export function MaintenanceTab({ snap, server }: { snap: AppSnapshot; server: Se
   const step = async (s: MaintStep, fn: () => Promise<MaintResult>): Promise<boolean> => {
     setMsg(null)
     if (!wizardRef.current) setBusy(s)
-    pushLocal(server.id, s, `▶ ${STEP_LABEL[s]} başladı`)
+    pushLocal(server.id, s, t('maint.started', { s: stepLabel(s) }))
     try {
       const r = await fn()
       return report(s, r)
@@ -165,11 +121,11 @@ export function MaintenanceTab({ snap, server }: { snap: AppSnapshot; server: Se
     wizardRef.current = true
     setBusy('wizard')
     try {
-      pushLocal(server.id, 'status', '═══ Tam Bakım Sihirbazı ═══')
+      pushLocal(server.id, 'status', t('maint.wizardHeader'))
       if (!(await runStatus())) return
       if (!(await runBackup())) return
       if (!(await runUpgrade())) return
-      pushLocal(server.id, 'reboot', 'Sihirbaz: reboot için onay bekleniyor (REBOOT yazın)')
+      pushLocal(server.id, 'reboot', t('maint.wizardRebootWait'))
       setPanel('reboot')
     } finally {
       wizardRef.current = false
@@ -179,38 +135,43 @@ export function MaintenanceTab({ snap, server }: { snap: AppSnapshot; server: Se
 
   const disabled = busy !== null || !!running
   const secCount = status?.upgradable.filter((p) => p.security).length ?? 0
+  // apt olmayan dağıtımlarda paket işlemleri desteklenmez (durum kontrolünden sonra bilinir)
+  const noApt = status?.pkgManager === 'unsupported'
+  // Durum kontrolünde şifresiz sudo izni yoksa ilgili butonlar kapanır (neden, durum kartındaki uyarıda yazar)
+  const upgradeBlock = noApt ? t('maint.aptOnly') : status?.sudoApt === false ? t('mm.noSudoApt') : undefined
+  const rebootBlock = status?.sudoReboot === false ? t('mm.noSudoReboot') : undefined
 
   return (
     <div className="flex flex-col gap-3">
       {!allow ? (
         <Alert kind="info">
-          Yedek, güncelleme, reboot ve geri yükleme için <b>Ayarlar → Yönetim eylemleri</b> açık olmalı. Durum kontrolü her zaman çalışır.
+          {t('maint.needActions1')} <b>{t('maint.needActionsPath')}</b> {t('maint.needActions2')}
         </Alert>
       ) : null}
-      {running && !busy ? <Alert kind="warn">Bu sunucuda şu an bir bakım işi sürüyor: {STEP_LABEL[running.step]} ({ago(running.since, now)} başladı)</Alert> : null}
+      {running && !busy ? <Alert kind="warn">{t('maint.running', { s: stepLabel(running.step), ago: ago(running.since, now) })}</Alert> : null}
       {msg ? <Alert kind={msg.kind}>{msg.text}</Alert> : null}
 
       <Card>
-        <SectionTitle>İşlemler</SectionTitle>
+        <SectionTitle>{t('maint.actions')}</SectionTitle>
         <div className="flex flex-wrap gap-2">
           <Button variant="primary" disabled={disabled} onClick={() => void runStatus()}>
-            {busy === 'status' ? 'Kontrol ediliyor…' : '1 · Durum kontrolü'}
+            {busy === 'status' ? t('maint.checking') : t('maint.btnStatus')}
           </Button>
           <Button disabled={disabled || !allow} onClick={() => void runBackup()}>
-            {busy === 'backup' ? 'Yedekleniyor…' : '2 · Postgres yedeği al + indir'}
+            {busy === 'backup' ? t('maint.backingUp') : t('maint.btnBackup')}
           </Button>
-          <Button disabled={disabled || !allow} onClick={askUpgrade}>
-            {busy === 'upgrade' ? 'Güncelleniyor…' : '3 · Paketleri güncelle'}
+          <Button disabled={disabled || !allow || !!upgradeBlock} onClick={askUpgrade} title={upgradeBlock}>
+            {busy === 'upgrade' ? t('maint.upgrading') : t('maint.btnUpgrade')}
           </Button>
-          <Button variant="danger" disabled={disabled || !allow} onClick={() => setPanel('reboot')}>
-            {busy === 'reboot' ? 'Yeniden başlatılıyor…' : '4 · Yeniden başlat'}
+          <Button variant="danger" disabled={disabled || !allow || !!rebootBlock} onClick={() => setPanel('reboot')} title={rebootBlock}>
+            {busy === 'reboot' ? t('maint.rebooting') : t('maint.btnReboot')}
           </Button>
           <Button disabled={disabled} onClick={() => void runPostcheck()}>
-            {busy === 'postcheck' ? 'Kontrol ediliyor…' : '5 · Reboot sonrası kontrol'}
+            {busy === 'postcheck' ? t('maint.checking') : t('maint.btnPostcheck')}
           </Button>
           <span className="mx-1 w-px self-stretch bg-line" />
-          <Button disabled={disabled || !allow} onClick={() => void wizard()} title="Durum → Yedek → Güncelle → (onay) Reboot → Kontrol">
-            {busy === 'wizard' ? 'Sihirbaz çalışıyor…' : '✦ Tam bakım sihirbazı'}
+          <Button disabled={disabled || !allow} onClick={() => void wizard()} title={t('maint.wizardTitle')}>
+            {busy === 'wizard' ? t('maint.wizardRunning') : t('maint.btnWizard')}
           </Button>
         </div>
 
@@ -218,7 +179,8 @@ export function MaintenanceTab({ snap, server }: { snap: AppSnapshot; server: Se
           <div className="mt-3">
             <Alert kind="warn">
               <div className="mb-2">
-                Son 24 saatte başarılı bir veritabanı yedeği görünmüyor{status ? '' : ' (önce durum kontrolü yapılmadı)'}. Önce yedek almanız önerilir.
+                {t('maint.noRecentBackup')}
+                {status ? '' : ` ${t('maint.noStatusYet')}`}
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -229,13 +191,13 @@ export function MaintenanceTab({ snap, server }: { snap: AppSnapshot; server: Se
                     void runBackup().then((ok) => ok && runUpgrade())
                   }}
                 >
-                  Önce yedek al, sonra güncelle
+                  {t('maint.backupThenUpgrade')}
                 </Button>
                 <Button small variant="danger" onClick={() => void runUpgrade()}>
-                  Yine de güncelle
+                  {t('maint.upgradeAnyway')}
                 </Button>
                 <Button small variant="ghost" onClick={() => setPanel(null)}>
-                  Vazgeç
+                  {t('common.cancel')}
                 </Button>
               </div>
             </Alert>
@@ -245,21 +207,24 @@ export function MaintenanceTab({ snap, server }: { snap: AppSnapshot; server: Se
         {panel === 'reboot' ? (
           <div className="mt-3">
             <Alert kind="error">
-              <div className="font-semibold">{server.name} yeniden başlatılacak.</div>
-              <div>sesli-asistan-telephony üzerindeki aktif aramalar kopar; 1-3 dk kesinti olur.</div>
-              {snap.states[server.id]?.asterisk?.activeCalls != null ? <div>Şu an aktif çağrı: {snap.states[server.id]?.asterisk?.activeCalls}</div> : null}
+              <div className="font-semibold">{t('maint.willReboot', { name: server.name })}</div>
+              <div>
+                {t('maint.rebootWarning')}
+                {server.asterisk ? ` ${t('maint.callsWarning')}` : ''}
+              </div>
+              {snap.states[server.id]?.asterisk?.activeCalls != null ? <div>{t('maint.activeCalls', { n: snap.states[server.id]?.asterisk?.activeCalls })}</div> : null}
               {status?.noRestart.length ? (
                 <div className="mt-1">
-                  Restart politikası <b>no</b> olan, reboot sonrası <b>gelmeyecek</b> container'lar: {status.noRestart.join(', ')}
+                  {t('maint.noRestartList', { list: status.noRestart.join(', ') })}
                 </div>
               ) : !status ? (
-                <div className="mt-1 text-ink-2">Geri gelmeyecek container listesi için önce durum kontrolü yapın (main process onay penceresinde de gösterilir).</div>
+                <div className="mt-1 text-ink-2">{t('maint.runStatusFirst')}</div>
               ) : null}
-              {status?.expectedKernel ? <div className="mt-1">Beklenen yeni çekirdek: {status.expectedKernel}</div> : null}
+              {status?.expectedKernel ? <div className="mt-1">{t('maint.expectedKernel', { k: status.expectedKernel })}</div> : null}
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <input className="w-40 font-mono" placeholder="REBOOT yazın" value={rebootText} onChange={(e) => setRebootText(e.target.value)} autoFocus />
+                <input className="w-40 font-mono" placeholder={t('maint.typeReboot')} value={rebootText} onChange={(e) => setRebootText(e.target.value)} autoFocus />
                 <Button small variant="danger" disabled={rebootText !== 'REBOOT' || disabled} onClick={() => void runReboot()}>
-                  Yeniden başlat
+                  {t('maint.reboot')}
                 </Button>
                 <Button
                   small
@@ -269,7 +234,7 @@ export function MaintenanceTab({ snap, server }: { snap: AppSnapshot; server: Se
                     setRebootText('')
                   }}
                 >
-                  Vazgeç
+                  {t('common.cancel')}
                 </Button>
               </div>
             </Alert>
@@ -286,11 +251,11 @@ export function MaintenanceTab({ snap, server }: { snap: AppSnapshot; server: Se
         <SectionTitle
           right={
             <Button small variant="ghost" onClick={() => void api.invoke('maint:openBackupDir', server.id)}>
-              Klasörü aç
+              {t('maint.openFolder')}
             </Button>
           }
         >
-          Bu bilgisayardaki yedekler ({backups.length})
+          {t('maint.localBackups', { n: backups.length })}
         </SectionTitle>
         {backups.length ? (
           <table className="tnum w-full text-[12px]">
@@ -305,21 +270,21 @@ export function MaintenanceTab({ snap, server }: { snap: AppSnapshot; server: Se
             </tbody>
           </table>
         ) : (
-          <div className="text-[12px] text-muted">Henüz yedek indirilmedi.</div>
+          <div className="text-[12px] text-muted">{t('maint.noBackups')}</div>
         )}
       </Card>
 
       <details className="rounded-xl border border-line bg-surface p-4">
-        <summary className="cursor-pointer text-sm font-semibold">Gelişmiş: yedeği geri yükle (acil durum)</summary>
+        <summary className="cursor-pointer text-sm font-semibold">{t('maint.restoreSummary')}</summary>
         <div className="mt-3 flex flex-col gap-2">
           <Alert kind="error">
-            <b>Mevcut veriyi etkiler ve geri alınamaz.</b> Seçilen pg_dumpall yedeği sunucuya yüklenip <code>psql -d postgres</code> ile{' '}
-            {status?.pg ? `${status.pg.container} (${status.pg.user})` : 'PostgreSQL container'}'ına uygulanır. Var olan rol/veritabanı uyarıları normaldir.
+            <b>{t('maint.restoreWarn1')}</b>{' '}
+            {t('maint.restoreWarn2', { target: status?.pg ? `${status.pg.container} (${status.pg.user})` : 'PostgreSQL container' })}
           </Alert>
           <div className="flex flex-wrap items-center gap-2">
-            <input className="w-40 font-mono" placeholder="RESTORE yazın" value={restoreText} onChange={(e) => setRestoreText(e.target.value)} />
+            <input className="w-40 font-mono" placeholder={t('maint.typeRestore')} value={restoreText} onChange={(e) => setRestoreText(e.target.value)} />
             <Button variant="danger" disabled={restoreText !== 'RESTORE' || disabled || !allow} onClick={() => void runRestore()}>
-              {busy === 'restore' ? 'Geri yükleniyor…' : 'Yedek dosyası seç ve geri yükle…'}
+              {busy === 'restore' ? t('maint.restoring') : t('maint.pickRestore')}
             </Button>
           </div>
         </div>
@@ -332,7 +297,7 @@ function StatusView({ st, secCount, now }: { st: MaintStatus; secCount: number; 
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <Card>
-        <SectionTitle>Sistem</SectionTitle>
+        <SectionTitle>{t('maint.system')}</SectionTitle>
         {st.error ? (
           <div className="mb-2">
             <Alert kind={st.ok ? 'warn' : 'error'}>{st.error}</Alert>
@@ -340,39 +305,39 @@ function StatusView({ st, secCount, now }: { st: MaintStatus; secCount: number; 
         ) : null}
         <table className="w-full text-[12px]">
           <tbody>
-            <Row k="Çalışan çekirdek" v={<span className="font-mono">{st.kernel ?? '—'}</span>} />
+            {st.os ? <Row k={t('maint.os')} v={st.os} /> : null}
+            <Row k={t('maint.kernel')} v={<span className="font-mono">{st.kernel ?? '—'}</span>} />
             <Row
               k="Reboot"
               v={
                 st.rebootRequired ? (
-                  <span className="font-semibold text-warning">Gerekli{st.expectedKernel ? ` → ${st.expectedKernel}` : ''}</span>
+                  <span className="font-semibold text-warning">{t('maint.required')}{st.expectedKernel ? ` → ${st.expectedKernel}` : ''}</span>
                 ) : (
-                  <span className="text-good">Gerekmiyor</span>
+                  <span className="text-good">{t('maint.notRequired')}</span>
                 )
               }
             />
-            {st.rebootPkgs.length ? <Row k="Nedeni" v={<span className="font-mono text-[11px]">{st.rebootPkgs.join(', ')}</span>} /> : null}
+            {st.rebootPkgs.length ? <Row k={t('maint.reason')} v={<span className="font-mono text-[11px]">{st.rebootPkgs.join(', ')}</span>} /> : null}
             <Row k="Uptime" v={<span className="text-[11px]">{st.uptime ?? '—'}</span>} />
             <Row k="Disk (/)" v={<span className="font-mono text-[11px]">{st.diskRoot ?? '—'}</span>} />
-            <Row k="PostgreSQL" v={st.pg ? `${st.pg.container} · ${st.pg.user}` : <span className="text-warning">bulunamadı</span>} />
+            <Row k="PostgreSQL" v={st.pg ? `${st.pg.container} · ${st.pg.user}` : <span className="text-warning">{t('maint.pgNotFound')}</span>} />
             <Row
-              k="Son yedek"
-              v={st.lastBackupAt ? <span className={now - st.lastBackupAt < DAY_MS ? 'text-good' : 'text-warning'}>{ago(st.lastBackupAt, now)}</span> : <span className="text-warning">yok</span>}
+              k={t('maint.lastBackup')}
+              v={st.lastBackupAt ? <span className={now - st.lastBackupAt < DAY_MS ? 'text-good' : 'text-warning'}>{ago(st.lastBackupAt, now)}</span> : <span className="text-warning">{t('common.none')}</span>}
             />
           </tbody>
         </table>
         {st.noRestart.length ? (
           <div className="mt-2">
             <Alert kind="warn">
-              Restart politikası <b>no</b>, reboot sonrası gelmez: {st.noRestart.join(', ')}
+              {t('maint.noRestartShort', { list: st.noRestart.join(', ') })}
             </Alert>
           </div>
         ) : null}
       </Card>
       <Card>
         <SectionTitle>
-          Bekleyen güncellemeler ({st.upgradable.length}
-          {secCount ? `, ${secCount} güvenlik` : ''})
+          {secCount ? t('maint.pendingSec', { n: st.upgradable.length, s: secCount }) : t('maint.pending', { n: st.upgradable.length })}
         </SectionTitle>
         {st.upgradable.length ? (
           <div className="max-h-64 overflow-auto">
@@ -385,7 +350,7 @@ function StatusView({ st, secCount, now }: { st: MaintStatus; secCount: number; 
                       <td className="py-1 font-medium">{p.name}</td>
                       <td className="py-1 font-mono text-[11px] text-ink-2">{p.version}</td>
                       <td className="py-1 text-right">
-                        {p.security ? <span className="rounded bg-critical px-1.5 py-0.5 text-[10px] font-semibold text-white">güvenlik</span> : null}
+                        {p.security ? <span className="rounded bg-critical px-1.5 py-0.5 text-[10px] font-semibold text-white">{t('maint.security')}</span> : null}
                       </td>
                     </tr>
                   ))}
@@ -393,9 +358,9 @@ function StatusView({ st, secCount, now }: { st: MaintStatus; secCount: number; 
             </table>
           </div>
         ) : (
-          <div className="text-[12px] text-good">Sistem güncel.</div>
+          <div className="text-[12px] text-good">{t('maint.upToDate')}</div>
         )}
-        <div className="mt-2 text-[11px] text-muted">{st.containers.length} çalışan container</div>
+        <div className="mt-2 text-[11px] text-muted">{t('maint.runningContainers', { n: st.containers.length })}</div>
       </Card>
     </div>
   )
@@ -406,17 +371,17 @@ function PostcheckView({ r, allow, disabled, onAutoremove }: { r: PostcheckResul
     <Card>
       <SectionTitle
         right={
-          <Button small disabled={disabled || !allow} onClick={onAutoremove} title="sudo apt-get -y autoremove: eski çekirdekleri temizler">
-            Eski çekirdekleri temizle (autoremove)
+          <Button small disabled={disabled || !allow} onClick={onAutoremove} title={t('maint.autoremoveTitle')}>
+            {t('maint.autoremoveBtn')}
           </Button>
         }
       >
-        Reboot sonrası kontrol {r.ok ? '✓' : '✕'}
+        {t('maint.postcheckTitle')} {r.ok ? '✓' : '✕'}
       </SectionTitle>
       <div className="mb-2 text-[12px]">
-        Çekirdek: <span className="font-mono">{r.kernel ?? '—'}</span>{' '}
-        {r.expectedKernel ? (r.kernelOk ? <span className="text-good">✓ beklenen</span> : <span className="text-critical">✕ beklenen {r.expectedKernel}</span>) : null}
-        {' · '}reboot-required: {r.rebootRequired ? <span className="text-critical">hâlâ var</span> : <span className="text-good">yok</span>}
+        {t('maint.kernelLabel')} <span className="font-mono">{r.kernel ?? '—'}</span>{' '}
+        {r.expectedKernel ? (r.kernelOk ? <span className="text-good">{t('maint.expectedOk')}</span> : <span className="text-critical">{t('maint.expectedBad', { k: r.expectedKernel })}</span>) : null}
+        {' · '}reboot-required: {r.rebootRequired ? <span className="text-critical">{t('maint.stillThere')}</span> : <span className="text-good">{t('common.none')}</span>}
       </div>
       <div className="grid grid-cols-1 gap-1 md:grid-cols-2">
         {r.containers.map((c) => (
@@ -427,27 +392,6 @@ function PostcheckView({ r, allow, disabled, onAutoremove }: { r: PostcheckResul
           </div>
         ))}
       </div>
-    </Card>
-  )
-}
-
-function LiveLog({ lines }: { lines: LogLine[] }): ReactNode {
-  const ref = useRef<HTMLPreElement>(null)
-  useEffect(() => {
-    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight
-  }, [lines.length])
-  return (
-    <Card>
-      <SectionTitle>Canlı çıktı</SectionTitle>
-      <pre ref={ref} className="tnum m-0 h-72 overflow-auto rounded-md bg-surface-2 p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-ink-2">
-        {lines.length === 0 ? <span className="text-muted">Henüz çıktı yok.</span> : null}
-        {lines.map((l, i) => (
-          <div key={i} className={/^✕|\b(E:|error|failed)\b/i.test(l.text) ? 'text-critical' : /^✓/.test(l.text) ? 'text-good' : /^(▶|═)|^W:|⚠/.test(l.text) ? 'text-ink' : ''}>
-            <span className="text-muted">[{STEP_LABEL[l.step]}] </span>
-            {l.text || ' '}
-          </div>
-        ))}
-      </pre>
     </Card>
   )
 }

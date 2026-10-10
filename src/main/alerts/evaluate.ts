@@ -1,4 +1,9 @@
-import type { IssueSeverity, ProjectConfig, ServerConfig, ServerState, Severity, Thresholds } from '@shared/types'
+import type { IssueSeverity, MaintStep, ProjectConfig, ServerConfig, ServerState, Severity, Thresholds } from '@shared/types'
+import { t } from '@shared/i18n'
+import { fmtBytes } from '@shared/format'
+import { isPublicBind } from '../parsers/insight'
+
+const pct = (v: number): string => t('fmt.pct', { v })
 
 export interface RawIssue {
   key: string
@@ -12,6 +17,7 @@ export interface RawIssue {
 const RESTART_WINDOW_MS = 10 * 60 * 1000
 /** Reboot/upgrade sırasında erişim ve container alarmlarının en fazla ne kadar susturulacağı. */
 export const MAINT_SILENCE_MS = 10 * 60 * 1000
+const SILENCING_STEPS = new Set<MaintStep>(['reboot', 'upgrade', 'deploy'])
 
 /**
  * Bir sunucunun anlık durumundan açık sorunları üretir. Saf fonksiyondur;
@@ -32,22 +38,25 @@ export function evaluateServer(
   if (!server.enabled || !st) return issues
 
   if (st.connection === 'hostkey-mismatch') {
-    add('hostkey', 'crit', `${server.name}: host key değişti`, 'Olası MITM. Bağlantı durduruldu; parmak izini ayarlardan yeniden onaylayın.')
+    add('hostkey', 'crit', t('alert.hostkey', { s: server.name }), t('alert.hostkeyDetail'))
     return issues
   }
 
-  // Planlı reboot/upgrade: kesinti beklenen bir durum, alarm üretme
-  if (st.maintenance && (st.maintenance.step === 'reboot' || st.maintenance.step === 'upgrade') && now - st.maintenance.since < MAINT_SILENCE_MS) {
+  // Planlı reboot/upgrade/deploy: kesinti beklenen bir durum, alarm üretme
+  if (st.maintenance && SILENCING_STEPS.has(st.maintenance.step) && now - st.maintenance.since < MAINT_SILENCE_MS) {
+    return issues
+  }
+
+  if (st.connection === 'auth-failed') {
+    // Otomatik yeniden deneme yapılmaz; kullanıcı kimlik bilgisini güncellemeli. Veri bayat olduğu için başka kontrol yok.
+    add('auth', 'crit', t('alert.auth', { s: server.name }), t('alert.authDetail'))
     return issues
   }
 
   if (st.reach && st.reach.consecutiveFailures >= th.unreachableAttempts) {
-    add('unreachable', 'crit', `${server.name}: sunucuya erişilemiyor`, st.reach.error)
+    add('unreachable', 'crit', t('alert.unreachable', { s: server.name }), st.reach.error)
     // Veri bayat olduğu için diğer kontroller değerlendirilmez
     return issues
-  }
-  if (st.connection === 'error' && st.connError && /auth|kimlik|All configured authentication methods failed/i.test(st.connError)) {
-    add('auth', 'crit', `${server.name}: SSH kimlik doğrulaması başarısız`, st.connError)
   }
 
   // --- Host ---------------------------------------------------------------
@@ -55,11 +64,24 @@ export function evaluateServer(
   if (h) {
     for (const d of h.disks) {
       if (d.pct >= th.diskPct) {
-        add(`disk:${d.mount}`, d.pct >= 95 ? 'crit' : 'warn', `${server.name}: disk ${d.mount} %${d.pct}`, `${fmtBytes(d.avail)} boş`)
+        add(`disk:${d.mount}`, d.pct >= 95 ? 'crit' : 'warn', t('alert.disk', { s: server.name, m: d.mount, pct: pct(d.pct) }), t('server.free', { v: fmtBytes(d.avail) }))
       }
     }
     if (h.memHighSince != null && now - h.memHighSince >= th.ramDurationSec * 1000 && h.memPct != null) {
-      add('ram', 'warn', `${server.name}: RAM %${Math.round(h.memPct)}`, `${Math.round(th.ramDurationSec / 60)} dakikadan uzun süredir %${th.ramPct} üzerinde`)
+      add('ram', 'warn', t('alert.ram', { s: server.name, pct: pct(Math.round(h.memPct)) }), t('alert.ramDetail', { min: Math.round(th.ramDurationSec / 60), pct: pct(th.ramPct) }))
+    }
+  }
+
+  // --- Depolama ve güvenlik (yavaş toplayıcılar) ------------------------------
+  for (const i of st.storage?.inodes ?? []) {
+    if (i.pct >= th.diskPct) {
+      add(`inode:${i.mount}`, i.pct >= 95 ? 'crit' : 'warn', t('alert.inode', { s: server.name, m: i.mount, pct: pct(i.pct) }), t('alert.inodeDetail'))
+    }
+  }
+  if (st.security && server.portBaseline) {
+    for (const p of st.security.ports) {
+      if (server.portBaseline.includes(p)) continue
+      add(`port:${p}`, 'warn', t(isPublicBind(p) ? 'alert.newPortPublic' : 'alert.newPort', { s: server.name, p }), t('alert.newPortDetail'))
     }
   }
 
@@ -69,26 +91,27 @@ export function evaluateServer(
   const dk = st.docker
   if (dk) {
     if (!dk.available) {
-      add('docker', 'warn', `${server.name}: Docker okunamıyor`, dk.error)
+      add('docker', 'warn', t('alert.docker', { s: server.name }), dk.error)
     } else {
       const byName = new Map(dk.containers.map((c) => [c.name, c]))
       const expected = new Set(projects.flatMap((p) => p.containers))
-      // Projelere atanmış container yoksa tüm container'lar izlenir
-      const watch = expected.size > 0 ? [...expected] : dk.containers.map((c) => c.name)
+      // Projelere atanmış container yoksa tüm container'lar izlenir; ama hiç başlamamış ya da
+      // normal biçimde bitmiş (Exited (0)) tek seferlik container'lar alarm üretmez.
+      const watch = expected.size > 0 ? [...expected] : dk.containers.filter((c) => !isFinishedNormally(c)).map((c) => c.name)
       for (const name of watch) {
         const pid = projectOf((p) => p.containers.includes(name))
         const c = byName.get(name)
         if (!c) {
-          add(`ctr:${name}:missing`, 'crit', `${name} bulunamadı`, 'Container silinmiş ya da adı değişmiş', pid)
+          add(`ctr:${name}:missing`, 'crit', t('alert.ctrMissing', { n: name }), t('alert.ctrMissingDetail'), pid)
           continue
         }
         if (c.state !== 'running') {
-          add(`ctr:${name}:state`, 'crit', `${name} çalışmıyor`, c.status || c.state, pid)
+          add(`ctr:${name}:state`, 'crit', t('alert.ctrDown', { n: name }), c.status || c.state, pid)
         } else if (c.health === 'unhealthy') {
-          add(`ctr:${name}:health`, 'crit', `${name} unhealthy`, c.status, pid)
+          add(`ctr:${name}:health`, 'crit', t('alert.ctrUnhealthy', { n: name }), c.status, pid)
         }
         if (c.lastRestartIncreaseAt != null && now - c.lastRestartIncreaseAt < RESTART_WINDOW_MS) {
-          add(`ctr:${name}:restart`, 'warn', `${name} yeniden başladı`, `Restart sayısı: ${c.restartCount}`, pid)
+          add(`ctr:${name}:restart`, 'warn', t('alert.ctrRestarted', { n: name }), t('alert.restartCount', { n: c.restartCount }), pid)
         }
       }
     }
@@ -99,13 +122,13 @@ export function evaluateServer(
     for (const u of st.systemd.units) {
       if (u.state !== 'active') {
         const pid = projectOf((p) => p.systemdUnits.includes(u.name))
-        add(`unit:${u.name}`, 'crit', `${u.name} servisi ${u.state}`, undefined, pid)
+        add(`unit:${u.name}`, 'crit', t('alert.unitDown', { n: u.name, state: u.state }), undefined, pid)
       }
     }
     for (const f of st.systemd.failed) {
       const base = f.replace(/\.service$/, '')
       if (st.systemd.units.some((u) => u.name === base)) continue
-      add(`failed:${f}`, 'warn', `Başarısız unit: ${f}`)
+      add(`failed:${f}`, 'warn', t('alert.failedUnit', { u: f }))
     }
   }
 
@@ -114,8 +137,12 @@ export function evaluateServer(
   for (const p of projects) {
     for (const c of p.httpChecks) {
       const r = st.http[c.id]
-      if (r && !r.ok) {
-        add(`http:${c.id}`, 'crit', `${c.name} yanıt vermiyor`, r.error ?? (r.status ? `HTTP ${r.status}` : undefined), p.id)
+      // Kontroller 30 sn'de bir çalıştığı için tek bir başarısız istek debounce'u aşar; ardışık hata sayısı beklenir
+      if (r && !r.ok && (r.failures ?? 1) >= th.checkFailAttempts) {
+        add(`http:${c.id}`, 'crit', t('alert.httpDown', { n: c.name }), r.error ?? (r.status ? `HTTP ${r.status}` : undefined), p.id)
+      }
+      if (r?.ok && c.slowMs && (r.slowStreak ?? 0) >= th.checkFailAttempts) {
+        add(`http:${c.id}:slow`, 'warn', t('alert.httpSlow', { n: c.name }), t('alert.httpSlowDetail', { ms: r.ms, limit: c.slowMs }), p.id)
       }
       if (c.mode === 'public' && c.url?.startsWith('https://')) {
         const host = hostOf(c.url)
@@ -124,15 +151,15 @@ export function evaluateServer(
         const s = st.ssl[host]
         if (!s) continue
         if (s.error && s.daysLeft == null) {
-          add(`ssl:${host}`, 'warn', `${host} SSL okunamadı`, s.error, p.id)
+          add(`ssl:${host}`, 'warn', t('alert.sslUnreadable', { h: host }), s.error, p.id)
         } else if (s.daysLeft != null && s.daysLeft < th.sslDays) {
-          add(`ssl:${host}`, s.daysLeft < 3 ? 'crit' : 'warn', `${host} SSL ${Math.max(0, Math.floor(s.daysLeft))} gün içinde bitiyor`, s.validTo, p.id)
+          add(`ssl:${host}`, s.daysLeft < 3 ? 'crit' : 'warn', t('alert.sslExpiring', { h: host, n: Math.max(0, Math.floor(s.daysLeft)) }), s.validTo, p.id)
         }
       }
     }
     const pg = st.postgres[p.id]
-    if (p.postgres && pg && pg.ready === false) {
-      add(`pg:${p.id}`, 'crit', `${p.name}: PostgreSQL hazır değil`, pg.error, p.id)
+    if (p.postgres && pg && pg.ready === false && (pg.failures ?? 1) >= th.checkFailAttempts) {
+      add(`pg:${p.id}`, 'crit', t('alert.pgDown', { p: p.name }), pg.error, p.id)
     }
   }
 
@@ -141,12 +168,17 @@ export function evaluateServer(
     const pid = projectOf((p) => p.asterisk)
     for (const r of ast.registrations) {
       if (r.status !== 'Registered') {
-        add(`ast:reg:${r.name}`, 'crit', `Asterisk trunk kayıtlı değil: ${r.name}`, r.status, pid)
+        add(`ast:reg:${r.name}`, 'crit', t('alert.trunk', { n: r.name }), r.status, pid)
       }
     }
   }
 
   return issues
+}
+
+/** Hiç başlatılmamış ya da 0 koduyla bitmiş container (migration, certbot vb. tek seferlik işler). */
+export function isFinishedNormally(c: { state: string; status: string }): boolean {
+  return c.state === 'created' || (c.state === 'exited' && /^Exited \(0\)/.test(c.status))
 }
 
 export function hostOf(url: string): string | null {
@@ -162,16 +194,4 @@ export function worst(sevs: Severity[]): Severity {
   if (sevs.includes('warn')) return 'warn'
   if (sevs.includes('unknown')) return 'unknown'
   return 'ok'
-}
-
-export function fmtBytes(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return '—'
-  const u = ['B', 'KB', 'MB', 'GB', 'TB']
-  let i = 0
-  let v = n
-  while (v >= 1024 && i < u.length - 1) {
-    v /= 1024
-    i++
-  }
-  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${u[i]}`
 }

@@ -1,13 +1,16 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import type { AppSnapshot, ServerConfig } from '@shared/types'
-import { api, useSnapshot, useTheme } from '../lib/api'
+import { api, applyLang, useSnapshot, useTheme } from '../lib/api'
+import { t } from '@shared/i18n'
+import { isMuted } from '@shared/mute'
 import { useNow } from '../lib/hooks'
-import { CONN_LABEL, containerCounts, rootDisk, serverSeverity, sevRank, SEV_LABEL } from '../lib/health'
+import { connLabel, containerCounts, rootDisk, serverSeverity, sevRank, sevLabel } from '../lib/health'
 import { fmtBytes, fmtMs } from '../lib/format'
 import { MiniBar, StatusDot } from '../components/ui'
 
 export function Widget(): ReactNode {
   const snap = useSnapshot()
+  applyLang(snap?.settings.language)
   useTheme(snap?.settings.theme)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -23,11 +26,19 @@ export function Widget(): ReactNode {
   return (
     <div ref={rootRef} className="overflow-hidden rounded-xl border border-line bg-surface/95 text-ink shadow-xl backdrop-blur">
       <Header snap={snap} />
+      {snap?.issues
+        .filter((i) => !i.serverId)
+        .map((i) => (
+          <div key={i.key} className="flex items-start gap-2 border-b border-line bg-surface-2 px-3 py-2 text-[11px]" title={i.detail}>
+            <StatusDot sev={i.severity} size={12} />
+            <span className="font-semibold">{i.title}</span>
+          </div>
+        ))}
       {!snap ? (
-        <div className="p-4 text-ink-2">Yükleniyor…</div>
+        <div className="p-4 text-ink-2">{t('common.loading')}</div>
       ) : snap.servers.length === 0 ? (
         <button className="w-full p-4 text-left text-ink-2 hover:bg-surface-2" onClick={() => void api.invoke('window:openDashboard')}>
-          Henüz sunucu eklenmedi. <span className="text-accent">Dashboard’dan ekleyin →</span>
+          {t('widget.noServers')} <span className="text-accent">{t('widget.addFromDashboard')}</span>
         </button>
       ) : (
         <ServerRows snap={snap} />
@@ -42,15 +53,15 @@ function Header({ snap }: { snap: AppSnapshot | null }): ReactNode {
     <div className="drag flex items-center gap-2 border-b border-line px-3 py-2">
       <StatusDot sev={overall} size={12} />
       <span className="text-[12px] font-semibold">ServerPulse</span>
-      <span className="text-[11px] text-muted">{SEV_LABEL[overall]}</span>
+      <span className="text-[11px] text-muted">{sevLabel(overall)}</span>
       <div className="no-drag ml-auto flex items-center gap-0.5">
-        <IconBtn title="Şimdi yenile" onClick={() => void api.invoke('app:refresh')}>
+        <IconBtn title={t('widget.refresh')} onClick={() => void api.invoke('app:refresh')}>
           ↻
         </IconBtn>
-        <IconBtn title="Dashboard’u aç" onClick={() => void api.invoke('window:openDashboard')}>
+        <IconBtn title={t('widget.openDashboard')} onClick={() => void api.invoke('window:openDashboard')}>
           ⤢
         </IconBtn>
-        <IconBtn title="Gizle (tray’den tekrar açılır)" onClick={() => void api.invoke('window:hideWidget')}>
+        <IconBtn title={t('widget.hide')} onClick={() => void api.invoke('window:hideWidget')}>
           ✕
         </IconBtn>
       </div>
@@ -95,13 +106,13 @@ function ServerRow({ server, snap, sev }: { server: ServerConfig; snap: AppSnaps
   const stale = h && now - h.ts > Math.max(30_000, snap.settings.intervals.fastSec * 4000)
 
   return (
-    <button className="block w-full px-3 py-2.5 text-left hover:bg-surface-2" onClick={() => void api.invoke('window:openDashboard', server.id)} title="Detay için tıklayın">
+    <button className="block w-full px-3 py-2.5 text-left hover:bg-surface-2" onClick={() => void api.invoke('window:openDashboard', server.id)} title={t('widget.clickForDetail')}>
       <div className="mb-1.5 flex items-center gap-2">
         <StatusDot sev={sev} size={14} />
         <span className="truncate text-[13px] font-semibold">{server.name}</span>
         <span className="ml-auto shrink-0 text-[11px] text-muted">
-          {st?.connection === 'ready' ? (st.reach?.sshMs != null ? fmtMs(st.reach.sshMs) : CONN_LABEL.ready) : CONN_LABEL[st?.connection ?? 'idle']}
-          {stale ? ' · eski veri' : ''}
+          {st?.connection === 'ready' ? (st.reach?.sshMs != null ? fmtMs(st.reach.sshMs) : connLabel('ready')) : connLabel(st?.connection ?? 'idle')}
+          {stale ? t('widget.stale') : ''}
         </span>
       </div>
       {st?.connection === 'ready' || h ? (
@@ -117,26 +128,30 @@ function ServerRow({ server, snap, sev }: { server: ServerConfig; snap: AppSnaps
             <b className={counts.healthy === counts.total ? 'text-ink' : 'text-critical'}>
               {counts.healthy}/{counts.total}
             </b>{' '}
-            container sağlıklı
+            {t('widget.containersHealthy')}
           </span>
         ) : st?.docker && !st.docker.available ? (
-          <span className="text-warning">Docker okunamıyor</span>
+          <span className="text-warning">{t('widget.dockerUnreadable')}</span>
         ) : null}
         {calls != null ? (
           <span>
-            📞 <b className="text-ink">{calls}</b> aktif çağrı
+            📞 <b className="text-ink">{calls}</b> {t('widget.activeCalls')}
           </span>
         ) : null}
       </div>
       {issues.length > 0 ? (
         <ul className="mt-1.5 flex flex-col gap-0.5">
-          {issues.slice(0, 4).map((i) => (
-            <li key={i.key} className="flex items-center gap-1.5 text-[11px]">
-              <StatusDot sev={i.severity} size={10} />
-              <span className="truncate">{i.title}</span>
-            </li>
-          ))}
-          {issues.length > 4 ? <li className="text-[11px] text-muted">+{issues.length - 4} sorun daha</li> : null}
+          {issues.slice(0, 4).map((i) => {
+            const muted = isMuted(i.key, snap.mutes)
+            return (
+              <li key={i.key} className={`flex items-center gap-1.5 text-[11px] ${muted ? 'opacity-50' : ''}`}>
+                <StatusDot sev={i.severity} size={10} />
+                <span className="truncate">{i.title}</span>
+                {muted ? <span title={t('mute.hint')}>🔕</span> : null}
+              </li>
+            )
+          })}
+          {issues.length > 4 ? <li className="text-[11px] text-muted">{t('widget.moreIssues', { n: issues.length - 4 })}</li> : null}
         </ul>
       ) : null}
     </button>

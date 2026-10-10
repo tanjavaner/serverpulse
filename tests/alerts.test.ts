@@ -64,7 +64,9 @@ function healthy(): ServerState {
       swapUsed: 0,
       uptimeSec: 1,
       disks: [{ fs: '/dev/sda1', mount: '/', size: 100, used: 40, avail: 60, pct: 40 }],
-      memHighSince: null
+      memHighSince: null,
+      netRx: null,
+      netTx: null
     },
     docker: { ts: 0, available: true, containers: [ctr({})] },
     systemd: { ts: 0, units: [{ name: 'nginx', state: 'active' }], failed: [] },
@@ -136,10 +138,30 @@ describe('evaluateServer', () => {
     expect(evaluateServer(server, [project], st, th, NOW)[0].key).toBe('s1:ram')
   })
 
-  it('HTTP 5xx / zaman aşımı', () => {
+  it('HTTP 5xx / zaman aşımı: ancak ardışık hata eşiğinden sonra', () => {
     const st = healthy()
-    st.http.h1 = { checkId: 'h1', ts: 0, ok: false, status: 502, ms: 30, error: 'HTTP 502' }
+    st.http.h1 = { checkId: 'h1', ts: 0, ok: false, status: 502, ms: 30, error: 'HTTP 502', failures: 1 }
+    // Tek başarısız istek (30 sn'lik aralıkta debounce'u aşsa da) alarm üretmez
+    expect(evaluateServer(server, [project], st, th, NOW)).toEqual([])
+    st.http.h1.failures = 2
     expect(evaluateServer(server, [project], st, th, NOW)[0]).toMatchObject({ key: 's1:http:h1', severity: 'crit' })
+  })
+
+  it('kimlik doğrulama hatası erişim sorunu olarak değil, ayrı alarm olarak raporlanır', () => {
+    const st = healthy()
+    st.connection = 'auth-failed'
+    st.reach!.consecutiveFailures = 5
+    expect(evaluateServer(server, [project], st, th, NOW).map((x) => x.key)).toEqual(['s1:auth'])
+  })
+
+  it('proje yokken normal biten ve hiç başlamamış container alarm üretmez', () => {
+    const st = healthy()
+    st.docker!.containers = [
+      ctr({ name: 'migrate', state: 'exited', status: 'Exited (0) 2 days ago' }),
+      ctr({ name: 'draft', state: 'created', status: 'Created' }),
+      ctr({ name: 'worker', state: 'exited', status: 'Exited (137) 3 minutes ago' })
+    ]
+    expect(evaluateServer(server, [], st, th, NOW).map((x) => x.key)).toEqual(['s1:ctr:worker:state'])
   })
 
   it('SSL 14 günden az', () => {
@@ -153,7 +175,9 @@ describe('evaluateServer', () => {
   it('pg_isready başarısız', () => {
     const st = healthy()
     const p = { ...project, postgres: { container: 'pg', user: 'postgres' } }
-    st.postgres.p1 = { ts: 0, ready: false, connections: null, databases: [], error: 'no response' }
+    st.postgres.p1 = { ts: 0, ready: false, connections: null, databases: [], error: 'no response', failures: 1 }
+    expect(evaluateServer(server, [p], st, th, NOW)).toEqual([])
+    st.postgres.p1.failures = 2
     expect(evaluateServer(server, [p], st, th, NOW)[0].key).toBe('s1:pg:p1')
   })
 

@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react'
 import type { AppSnapshot } from '@shared/types'
+import { t } from '@shared/i18n'
 import { api } from '../lib/api'
 import { useAsync, useNow } from '../lib/hooks'
 import { ago, dateTime } from '../lib/format'
+import { sevLabel } from '../lib/health'
 import { Card, Empty, SectionTitle, StatusDot } from '../components/ui'
 import type { Nav } from './App'
 
@@ -14,17 +16,17 @@ export function EventsView({ snap, nav }: { snap: AppSnapshot; nav: Nav }): Reac
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-bold">Olaylar</h1>
+      <h1 className="text-xl font-bold">{t('nav.events')}</h1>
       <Card>
-        <SectionTitle>Şu an açık ({snap.issues.length})</SectionTitle>
+        <SectionTitle>{t('events.openNow', { n: snap.issues.length })}</SectionTitle>
         {snap.issues.length === 0 ? (
-          <div className="text-[13px] text-ink-2">Açık sorun yok.</div>
+          <div className="text-[13px] text-ink-2">{t('events.noOpen')}</div>
         ) : (
           <ul className="flex flex-col gap-1.5">
             {snap.issues.map((i) => (
               <li key={i.key} className="flex items-center gap-2 text-[13px]">
                 <StatusDot sev={i.severity} size={14} />
-                <button className="font-medium hover:text-accent" onClick={() => nav({ view: 'server', serverId: i.serverId })}>
+                <button className="font-medium hover:text-accent" onClick={() => i.serverId && nav({ view: 'server', serverId: i.serverId })}>
                   {i.title}
                 </button>
                 <span className="truncate text-ink-2">{i.detail}</span>
@@ -37,9 +39,9 @@ export function EventsView({ snap, nav }: { snap: AppSnapshot; nav: Nav }): Reac
         )}
       </Card>
       <Card>
-        <SectionTitle>Geçmiş (son 30 gün)</SectionTitle>
+        <SectionTitle>{t('events.history30')}</SectionTitle>
         {!data?.length ? (
-          <Empty>Henüz olay yok.</Empty>
+          <Empty>{t('events.empty')}</Empty>
         ) : (
           <table className="w-full text-[12px]">
             <tbody>
@@ -47,10 +49,10 @@ export function EventsView({ snap, nav }: { snap: AppSnapshot; nav: Nav }): Reac
                 <tr key={e.id} className="border-t border-line">
                   <td className="tnum py-1.5 pr-3 whitespace-nowrap text-ink-2">{dateTime(e.ts)}</td>
                   <td className="py-1.5 pr-2">
-                    <StatusDot sev={e.kind === 'resolved' ? 'ok' : e.severity} size={12} title={e.kind === 'resolved' ? 'Düzeldi' : e.severity === 'crit' ? 'Kritik' : 'Uyarı'} />
+                    <StatusDot sev={e.kind === 'resolved' ? 'ok' : e.severity} size={12} title={e.kind === 'resolved' ? t('events.resolved') : sevLabel(e.severity)} />
                   </td>
                   <td className="py-1.5 pr-3">
-                    <span className="font-medium">{e.kind === 'resolved' ? 'Düzeldi: ' : ''}{e.title}</span>
+                    <span className="font-medium">{e.kind === 'resolved' ? t('events.resolvedPrefix') : ''}{e.title}</span>
                     {e.detail ? <span className="text-ink-2"> · {e.detail}</span> : null}
                   </td>
                   <td className="py-1.5 text-right whitespace-nowrap text-muted">{name(e.serverId)}</td>

@@ -1,7 +1,9 @@
-import { useState, type ReactNode } from 'react'
-import type { AppSnapshot, HostKeyProbe, ServerConfig, ServerInput, TestResult } from '@shared/types'
+import { useEffect, useState, type ReactNode } from 'react'
+import type { AppSnapshot, HostKeyProbe, ServerConfig, ServerInput, SshConfigHost, TestResult } from '@shared/types'
+import { t } from '@shared/i18n'
 import { api } from '../lib/api'
 import { Alert, Button, Card, Field, SectionTitle, Toggle } from '../components/ui'
+import { SetupCard } from './SetupCard'
 import type { Nav } from './App'
 
 export function ServerForm({ server, nav }: { snap: AppSnapshot; server?: ServerConfig; nav: Nav }): ReactNode {
@@ -12,6 +14,7 @@ export function ServerForm({ server, nav }: { snap: AppSnapshot; server?: Server
     port: server?.port ?? 22,
     username: server?.username ?? '',
     authType: server?.authType ?? 'key',
+    agent: server?.agent ?? 'openssh',
     keyFileName: server?.keyFileName,
     hostKeyFingerprint: server?.hostKeyFingerprint,
     systemdUnits: server?.systemdUnits ?? [],
@@ -29,6 +32,27 @@ export function ServerForm({ server, nav }: { snap: AppSnapshot; server?: Server
   const [busy, setBusy] = useState<'test' | 'save' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [sshHosts, setSshHosts] = useState<SshConfigHost[]>([])
+  useEffect(() => {
+    if (!server) void api.invoke('server:sshConfigHosts').then(setSshHosts)
+  }, [server])
+
+  /** ~/.ssh/config'teki bir Host bloğuyla formu doldurur; host key onayı yine gerekir. */
+  const fillFrom = (alias: string): void => {
+    const h = sshHosts.find((x) => x.alias === alias)
+    if (!h) return
+    setProbe(null)
+    setTest(null)
+    setF((prev) => ({
+      ...prev,
+      name: prev.name || h.alias,
+      host: h.host,
+      port: h.port ?? 22,
+      username: h.user ?? prev.username,
+      hostKeyFingerprint: undefined,
+      ...(h.identityFile ? { authType: 'key' as const, privateKeyPath: h.identityFile, keyFileName: h.identityFile.split(/[\\/]/).pop() } : {})
+    }))
+  }
 
   const set = <K extends keyof ServerInput>(k: K, v: ServerInput[K]): void => {
     setF((prev) => {
@@ -108,104 +132,148 @@ export function ServerForm({ server, nav }: { snap: AppSnapshot; server?: Server
 
   return (
     <div className="flex max-w-3xl flex-col gap-4">
-      <h1 className="text-xl font-bold">{server ? `${server.name}: düzenle` : 'Sunucu ekle'}</h1>
+      <h1 className="text-xl font-bold">{server ? t('common.editTitle', { name: server.name }) : t('sf.addTitle')}</h1>
 
       <Card className="flex flex-col gap-3">
-        <SectionTitle>Bağlantı</SectionTitle>
+        <SectionTitle
+          right={
+            sshHosts.length ? (
+              <select className="text-[12px]" value="" onChange={(e) => fillFrom(e.target.value)} title={t('sf.fromSshConfig')}>
+                <option value="">{t('sf.fromSshConfig')}</option>
+                {sshHosts.map((h) => (
+                  <option key={h.alias} value={h.alias}>
+                    {h.alias}
+                    {h.host !== h.alias ? ` (${h.host})` : ''}
+                  </option>
+                ))}
+              </select>
+            ) : null
+          }
+        >
+          {t('sf.connection')}
+        </SectionTitle>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <Field label="Ad">
-            <input value={f.name} onChange={(e) => set('name', e.target.value)} placeholder="ör. Ana VDS" />
+          <Field label={t('sf.name')}>
+            <input value={f.name} onChange={(e) => set('name', e.target.value)} placeholder={t('sf.namePh')} />
           </Field>
-          <Field label="Kullanıcı" hint="docker grubunda, root olmayan bir kullanıcı önerilir">
+          <Field label={t('sf.user')} hint={t('sf.userHint')}>
             <input value={f.username} onChange={(e) => set('username', e.target.value)} placeholder="deploy" autoComplete="off" />
           </Field>
-          <Field label="Host / IP" hint="Mümkünse Tailscale IP'si (100.x.y.z)">
-            <input value={f.host} onChange={(e) => set('host', e.target.value)} placeholder="100.99.9.0" />
+          <Field label={t('sf.host')} hint={t('sf.hostHint')}>
+            <input value={f.host} onChange={(e) => set('host', e.target.value)} placeholder={t('sf.hostPh')} />
           </Field>
-          <Field label="Port">
+          <Field label={t('sf.port')}>
             <input type="number" value={f.port} onChange={(e) => set('port', Number(e.target.value))} min={1} max={65535} />
           </Field>
         </div>
 
         <div className="flex gap-4 text-[13px]">
           <label className="flex items-center gap-1.5">
-            <input type="radio" checked={f.authType === 'key'} onChange={() => set('authType', 'key')} /> Özel anahtar (önerilir)
+            <input type="radio" checked={f.authType === 'key'} onChange={() => set('authType', 'key')} /> {t('sf.authKey')}
           </label>
           <label className="flex items-center gap-1.5">
-            <input type="radio" checked={f.authType === 'password'} onChange={() => set('authType', 'password')} /> Şifre
+            <input type="radio" checked={f.authType === 'agent'} onChange={() => set('authType', 'agent')} /> {t('sf.authAgent')}
+          </label>
+          <label className="flex items-center gap-1.5">
+            <input type="radio" checked={f.authType === 'password'} onChange={() => set('authType', 'password')} /> {t('sf.authPassword')}
           </label>
         </div>
 
         {f.authType === 'key' ? (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <Field label="Özel anahtar dosyası" hint="İçerik işletim sisteminin güvenli deposuyla şifrelenip saklanır">
+            <Field label={t('sf.keyFile')} hint={t('sf.keyFileHint')}>
               <div className="flex gap-2">
-                <input readOnly value={f.keyFileName ?? ''} placeholder={server?.keyFileName ? '(kayıtlı)' : 'Seçilmedi'} className="flex-1" />
-                <Button onClick={() => void pickKey()}>Seç…</Button>
+                <input readOnly value={f.keyFileName ?? ''} placeholder={server?.keyFileName ? t('sf.keySaved') : t('sf.notSelected')} className="flex-1" />
+                <Button onClick={() => void pickKey()}>{t('sf.pick')}</Button>
               </div>
             </Field>
-            <Field label="Passphrase (varsa)" hint={server ? 'Boş bırakırsanız kayıtlı değer korunur' : undefined}>
+            <Field label={t('sf.passphrase')} hint={server ? t('sf.keepSaved') : undefined}>
               <input type="password" value={f.passphrase ?? ''} onChange={(e) => set('passphrase', e.target.value)} autoComplete="new-password" />
             </Field>
           </div>
+        ) : f.authType === 'agent' ? (
+          api.platform === 'win32' ? (
+            <Field label={t('sf.agentKind')} hint={t('sf.agentHint')}>
+              <select value={f.agent ?? 'openssh'} onChange={(e) => set('agent', e.target.value === 'pageant' ? 'pageant' : 'openssh')} className="max-w-md">
+                <option value="openssh">{t('sf.agentOpenssh')}</option>
+                <option value="pageant">{t('sf.agentPageant')}</option>
+              </select>
+            </Field>
+          ) : (
+            <div className="text-[12px] text-ink-2">{t('sf.agentHint')}</div>
+          )
         ) : (
-          <Field label="Şifre" hint={server ? 'Boş bırakırsanız kayıtlı şifre korunur' : 'Şifreli giriş yerine SSH anahtarı önerilir'}>
+          <Field label={t('sf.authPassword')} hint={server ? t('sf.keepSavedPassword') : t('sf.passwordHint')}>
             <input type="password" value={f.password ?? ''} onChange={(e) => set('password', e.target.value)} autoComplete="new-password" />
           </Field>
         )}
 
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="primary" onClick={() => void startTest()} disabled={busy !== null || !f.host || !f.username}>
-            {busy === 'test' ? 'Test ediliyor…' : 'Bağlantıyı test et'}
+            {busy === 'test' ? t('sf.testing') : t('sf.test')}
           </Button>
-          {f.hostKeyFingerprint ? <span className="font-mono text-[11px] text-muted">Onaylı: {f.hostKeyFingerprint}</span> : null}
+          {f.hostKeyFingerprint ? <span className="font-mono text-[11px] text-muted">{t('sf.approved', { fp: f.hostKeyFingerprint })}</span> : null}
         </div>
 
-        {probe && !probe.ok ? <Alert kind="error">Sunucuya ulaşılamadı: {probe.error}</Alert> : null}
+        {probe && !probe.ok ? <Alert kind="error">{t('sf.unreachable', { e: probe.error })}</Alert> : null}
 
         {needsConfirm ? (
           <Alert kind={fpChanged ? 'error' : 'info'}>
             {fpChanged ? (
-              <div className="mb-1 font-semibold">Dikkat: host key değişmiş! Sunucu yeniden kurulmadıysa bu bir saldırı olabilir.</div>
+              <div className="mb-1 font-semibold">{t('sf.keyChanged')}</div>
             ) : (
-              <div className="mb-1 font-semibold">Bu sunucuya ilk kez bağlanılıyor. Host key parmak izini doğrulayın:</div>
+              <div className="mb-1 font-semibold">{t('sf.firstConnect')}</div>
             )}
             <div className="font-mono text-[12px]">
               {probe?.algorithm} {probe?.fingerprint}
             </div>
             <div className="mt-1 text-[11px] text-ink-2">
-              Sunucuda kontrol: <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code>
+              {t('sf.verifyOnServer')} <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code>
             </div>
             <div className="mt-2">
               <Button small variant="primary" onClick={() => void confirmKey()}>
-                Parmak izini onayla ve devam et
+                {t('sf.confirmFp')}
               </Button>
             </div>
           </Alert>
         ) : null}
 
-        {test ? <TestView t={test} /> : null}
+        {test ? <TestView r={test} /> : null}
       </Card>
 
+      <SetupCard
+        user={f.username.trim()}
+        asterisk={!!f.asterisk}
+        keySource={
+          f.authType !== 'key'
+            ? null
+            : f.privateKeyPath
+              ? { privateKeyPath: f.privateKeyPath, passphrase: f.passphrase || undefined }
+              : server?.authType === 'key'
+                ? { serverId: server.id, passphrase: f.passphrase || undefined }
+                : null
+        }
+      />
+
       <Card className="flex flex-col gap-3">
-        <SectionTitle>İzleme</SectionTitle>
-        <Field label="Sunucu seviyesinde systemd servisleri" hint="Virgülle ayırın. Keşif sırasında otomatik önerilir.">
+        <SectionTitle>{t('sf.monitoring')}</SectionTitle>
+        <Field label={t('sf.serverUnits')} hint={t('sf.serverUnitsHint')}>
           <input value={unitsText} onChange={(e) => setUnitsText(e.target.value)} placeholder="nginx, docker, fail2ban, tailscaled" />
         </Field>
         <Toggle
           checked={!!f.asterisk}
           onChange={(v) => set('asterisk', v)}
-          label="Asterisk CLI okumaları"
-          hint="asterisk -rx ile aktif çağrı / trunk kaydı. root değilseniz sudoers kuralı gerekir (README)."
+          label={t('sf.asterisk')}
+          hint={t('sf.asteriskHint')}
         />
-        <Toggle checked={!!f.prometheus} onChange={(v) => set('prometheus', v)} label="Prometheus uzun geçmiş" hint="SSH tüneliyle sunucudaki 127.0.0.1:9090'a sorgu atılır." />
-        <Toggle checked={f.enabled !== false} onChange={(v) => set('enabled', v)} label="İzleme etkin" />
+        <Toggle checked={!!f.prometheus} onChange={(v) => set('prometheus', v)} label={t('sf.prometheus')} hint={t('sf.prometheusHint')} />
+        <Toggle checked={f.enabled !== false} onChange={(v) => set('enabled', v)} label={t('sf.enabled')} />
       </Card>
 
       <Card className="flex flex-col gap-3">
-        <SectionTitle>Bakım (yedek / geri yükleme)</SectionTitle>
+        <SectionTitle>{t('sf.maintenance')}</SectionTitle>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <Field label="PostgreSQL container" hint="Boş: projelerdeki PostgreSQL ayarı ya da çalışan postgres container'ı otomatik bulunur">
+          <Field label={t('sf.pgContainer')} hint={t('sf.pgContainerHint')}>
             <input
               value={f.maintenance?.pgContainer ?? ''}
               onChange={(e) => set('maintenance', { ...f.maintenance, pgContainer: e.target.value })}
@@ -213,11 +281,11 @@ export function ServerForm({ server, nav }: { snap: AppSnapshot; server?: Server
               autoComplete="off"
             />
           </Field>
-          <Field label="PostgreSQL kullanıcısı" hint="Boş: container ortamındaki POSTGRES_USER okunur">
+          <Field label={t('sf.pgUser')} hint={t('sf.pgUserHint')}>
             <input
               value={f.maintenance?.pgUser ?? ''}
               onChange={(e) => set('maintenance', { ...f.maintenance, pgUser: e.target.value })}
-              placeholder="asistan"
+              placeholder="postgres"
               autoComplete="off"
             />
           </Field>
@@ -228,27 +296,27 @@ export function ServerForm({ server, nav }: { snap: AppSnapshot; server?: Server
 
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="primary" onClick={() => void save()} disabled={busy !== null || !f.hostKeyFingerprint || !f.name}>
-          {busy === 'save' ? 'Kaydediliyor…' : server ? 'Kaydet' : 'Kaydet ve keşfet →'}
+          {busy === 'save' ? t('common.saving') : server ? t('common.save') : t('sf.saveDiscover')}
         </Button>
         <Button variant="ghost" onClick={() => nav(server ? { view: 'server', serverId: server.id } : { view: 'home' })}>
-          Vazgeç
+          {t('common.cancel')}
         </Button>
-        {!f.hostKeyFingerprint ? <span className="text-[12px] text-muted">Kaydetmek için önce bağlantıyı test edip host key'i onaylayın.</span> : null}
+        {!f.hostKeyFingerprint ? <span className="text-[12px] text-muted">{t('sf.needTest')}</span> : null}
         {server ? (
           <div className="ml-auto">
             {confirmDelete ? (
               <span className="flex items-center gap-2">
-                <span className="text-[12px] text-ink-2">Sunucu, projeleri ve geçmişi silinsin mi?</span>
+                <span className="text-[12px] text-ink-2">{t('sf.confirmDelete')}</span>
                 <Button variant="danger" onClick={() => void remove()}>
-                  Evet, sil
+                  {t('common.yesDelete')}
                 </Button>
                 <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
-                  Vazgeç
+                  {t('common.cancel')}
                 </Button>
               </span>
             ) : (
               <Button variant="danger" onClick={() => setConfirmDelete(true)}>
-                Sunucuyu sil
+                {t('sf.delete')}
               </Button>
             )}
           </div>
@@ -258,20 +326,20 @@ export function ServerForm({ server, nav }: { snap: AppSnapshot; server?: Server
   )
 }
 
-function TestView({ t }: { t: TestResult }): ReactNode {
-  if (!t.ok) return <Alert kind="error">Bağlantı başarısız: {t.error}</Alert>
+function TestView({ r }: { r: TestResult }): ReactNode {
+  if (!r.ok) return <Alert kind="error">{t('sf.testFailed', { e: r.error })}</Alert>
+  const ast = { ok: t('sf.astOk'), 'no-sudo': t('sf.astNoSudo'), 'not-installed': t('sf.astNotInstalled'), unknown: t('common.unknown') }
   return (
     <div className="flex flex-col gap-2">
       <Alert kind="ok">
-        <div className="font-semibold">Bağlantı başarılı ({t.latencyMs} ms)</div>
-        <div className="font-mono text-[11px] break-all text-ink-2">{t.uname}</div>
-        <div className="font-mono text-[11px] break-all text-ink-2">{t.id}</div>
+        <div className="font-semibold">{t('sf.testOk', { ms: r.latencyMs })}</div>
+        <div className="font-mono text-[11px] break-all text-ink-2">{r.uname}</div>
+        <div className="font-mono text-[11px] break-all text-ink-2">{r.id}</div>
         <div className="mt-1 text-[12px]">
-          Docker: {t.dockerAccess ? `erişim var (v${t.dockerVersion})` : 'erişim yok'} · Asterisk CLI:{' '}
-          {{ ok: 'erişim var', 'no-sudo': 'sudoers kuralı yok', 'not-installed': 'kurulu değil', unknown: 'bilinmiyor' }[t.asteriskAccess]}
+          Docker: {r.dockerAccess ? t('sf.dockerAccess', { v: r.dockerVersion }) : t('sf.noAccess')} · Asterisk CLI: {ast[r.asteriskAccess]}
         </div>
       </Alert>
-      {t.warnings.map((w) => (
+      {r.warnings.map((w) => (
         <Alert key={w} kind="warn">
           {w}
         </Alert>

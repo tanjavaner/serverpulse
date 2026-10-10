@@ -1,26 +1,62 @@
+import { readFileSync, statSync } from 'node:fs'
 import { request } from 'node:http'
+import { utils as sshUtils } from 'ssh2'
 import type {
   ActionResult,
+  ContainerAction,
   DiscoveryResult,
   HostKeyProbe,
+  LogOptions,
   LogResult,
   PromPreset,
+  ProcessResult,
   PromResult,
+  PublicKeyResult,
   ServerInput,
   TestResult
 } from '@shared/types'
+import { normalizePubKey } from '@shared/setup'
+import { t, type MsgKey } from '@shared/i18n'
 import type { Monitor } from './monitor'
 import { CMD, buildScript, parseSections, safeName } from './ssh/commands'
 import { execOn, probeHostKey, withTempConnection } from './ssh/connection'
 import { isDockerPermissionError, parseDockerPs } from './parsers/docker'
 import { parseNginxSites, parseRunningUnits } from './parsers/misc'
 import { buildProposals, isPostgresImage, suggestUnits } from './discovery/proposals'
+import { parseProcesses } from './parsers/insight'
 import { allUnits } from './collectors'
 
 export async function probe(host: string, port: number): Promise<HostKeyProbe> {
   try {
     const r = await probeHostKey(host, port)
     return { ok: true, ...r }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+/** Seçilen (ya da kayıtlı) özel anahtardan authorized_keys satırını üretir; anahtar main dışına çıkmaz. */
+export function publicKeyLine(monitor: Monitor, input: { privateKeyPath?: string; serverId?: string; passphrase?: string }): PublicKeyResult {
+  try {
+    let data: string | undefined
+    let passphrase = input.passphrase || undefined
+    if (input.privateKeyPath) {
+      if (statSync(input.privateKeyPath).size > 64 * 1024) throw new Error(t('err.keyTooLarge'))
+      data = readFileSync(input.privateKeyPath, 'utf8')
+    } else if (input.serverId) {
+      const creds = monitor.secrets.get(input.serverId)
+      data = creds?.privateKey
+      passphrase ??= creds?.passphrase
+    }
+    if (!data) throw new Error(t('err.keyRequired'))
+    const parsed = sshUtils.parseKey(data, passphrase)
+    if (parsed instanceof Error) throw new Error(t('err.keyParse', { e: parsed.message }))
+    const key = Array.isArray(parsed) ? parsed[0] : parsed
+    const blob = `${key.type} ${key.getPublicSSH().toString('base64')}`
+    // Yorumda betiğe uymayan karakter varsa yorumsuz satır kullanılır
+    const line = (key.comment ? normalizePubKey(`${blob} ${key.comment}`) : null) ?? normalizePubKey(blob)
+    if (!line) throw new Error(t('err.keyParse', { e: key.type }))
+    return { ok: true, key: line }
   } catch (e) {
     return { ok: false, error: (e as Error).message }
   }
@@ -44,19 +80,19 @@ export async function testConnection(monitor: Monitor, input: ServerInput): Prom
     const dockerOut = sec.docker?.out.trim() ?? ''
     res.dockerAccess = sec.docker?.rc === 0 && /^\d/.test(dockerOut)
     if (res.dockerAccess) res.dockerVersion = dockerOut
-    else if (isDockerPermissionError(dockerOut)) res.warnings.push('Kullanıcı docker grubunda değil: sudo usermod -aG docker ' + input.username)
-    else res.warnings.push('Docker bulunamadı ya da çalışmıyor: ' + dockerOut.split('\n')[0])
+    else if (isDockerPermissionError(dockerOut)) res.warnings.push(t('op.notInDocker', { u: input.username }))
+    else res.warnings.push(t('op.dockerMissing', { e: dockerOut.split('\n')[0] }))
 
     if (sec.asterisk_bin?.rc !== 0) res.asteriskAccess = 'not-installed'
     else if (sec.asterisk_sudo?.rc === 0) res.asteriskAccess = 'ok'
     else {
       res.asteriskAccess = 'no-sudo'
       if (input.asterisk) {
-        res.warnings.push('Asterisk CLI için sudoers kuralı yok; sadece systemd durumu gösterilecek.')
+        res.warnings.push(t('op.astNoSudoers'))
       }
     }
-    if (isRoot) res.warnings.push('root ile bağlanıyorsunuz. Salt okunur izleme için docker grubundaki ayrı bir kullanıcı önerilir.')
-    if (input.authType === 'password') res.warnings.push('Şifreyle giriş yerine SSH anahtarı önerilir.')
+    if (isRoot) res.warnings.push(t('op.rootWarn'))
+    if (input.authType === 'password') res.warnings.push(t('op.passwordWarn'))
   } catch (e) {
     res.error = (e as Error).message
   }
@@ -69,7 +105,7 @@ export async function discover(monitor: Monitor, serverId: string): Promise<Disc
     const r = await monitor.execFor(serverId, buildScript(CMD.discovery()), 60000)
     const sec = parseSections(r.stdout)
     const psOut = sec.ps?.out ?? ''
-    if (isDockerPermissionError(psOut)) return { ...empty, error: "Kullanıcının docker'a erişimi yok" }
+    if (isDockerPermissionError(psOut)) return { ...empty, error: t('op.noDockerAccess') }
     const containers = parseDockerPs(psOut)
     const runningUnits = parseRunningUnits(sec.units?.out ?? '')
     const nginx = parseNginxSites(sec.nginx?.out ?? '')
@@ -98,23 +134,23 @@ export async function discover(monitor: Monitor, serverId: string): Promise<Disc
   }
 }
 
-export async function getLogs(monitor: Monitor, serverId: string, kind: 'container' | 'unit', name: string): Promise<LogResult> {
+export async function getLogs(monitor: Monitor, serverId: string, kind: 'container' | 'unit', name: string, opts: LogOptions = {}): Promise<LogResult> {
   try {
     safeName(name)
     const server = monitor.config.server(serverId)
-    if (!server) throw new Error('Sunucu bulunamadı')
+    if (!server) throw new Error(t('err.serverNotFound'))
     // Sadece bilinen (keşfedilmiş/yapılandırılmış) adlar için log okunur
     if (kind === 'container') {
       const known = monitor.state(serverId)?.docker?.containers.some((c) => c.name === name)
-      if (!known) throw new Error('Bilinmeyen container')
-      const r = await monitor.execFor(serverId, CMD.containerLogs(name), 20000)
+      if (!known) throw new Error(t('err.unknownContainer'))
+      const r = await monitor.execFor(serverId, CMD.containerLogs(name, opts), 30000)
       return { ok: r.code === 0, lines: r.stdout + r.stderr }
     }
-    if (!allUnits(server, monitor.config.projectsOf(serverId)).includes(name)) throw new Error('Bilinmeyen unit')
-    const r = await monitor.execFor(serverId, CMD.unitLogs(name), 20000)
+    if (!allUnits(server, monitor.config.projectsOf(serverId)).includes(name)) throw new Error(t('err.unknownUnit'))
+    const r = await monitor.execFor(serverId, CMD.unitLogs(name, opts), 30000)
     const out = r.stdout + r.stderr
     if (/No journal files were found|not seeing messages from other users/i.test(out)) {
-      return { ok: false, lines: out, error: 'Journal okunamıyor; kullanıcı systemd-journal ya da adm grubunda olmalı' }
+      return { ok: false, lines: out, error: t('op.journalDenied') }
     }
     return { ok: r.code === 0, lines: out }
   } catch (e) {
@@ -122,22 +158,85 @@ export async function getLogs(monitor: Monitor, serverId: string, kind: 'contain
   }
 }
 
-export async function restartContainer(
+/** En çok CPU kullanan süreçler (isteğe bağlı, salt okunur). */
+export async function listProcesses(monitor: Monitor, serverId: string): Promise<ProcessResult> {
+  try {
+    if (!monitor.config.server(serverId)) throw new Error(t('err.serverNotFound'))
+    const r = await monitor.execFor(serverId, CMD.processes(), 20000)
+    const processes = parseProcesses(r.stdout)
+    return { ok: processes.length > 0, processes, error: processes.length ? undefined : r.stdout.trim().slice(0, 300) }
+  } catch (e) {
+    return { ok: false, processes: [], error: (e as Error).message }
+  }
+}
+
+/** "Total reclaimed space: 1.2GB" satırlarını toplar (safe modda iki satır olabilir). */
+export function reclaimedSummary(out: string): string[] {
+  return [...out.matchAll(/Total reclaimed space:\s*(\S+)/g)].map((m) => m[1]).filter((v) => !/^0(\.0+)?B$/.test(v))
+}
+
+export async function pruneDocker(
+  monitor: Monitor,
+  serverId: string,
+  mode: 'safe' | 'images',
+  confirm: (message: string, okLabel: string) => Promise<boolean>
+): Promise<ActionResult> {
+  try {
+    if (!monitor.config.settings.allowActions) throw new Error(t('err.actionsDisabled'))
+    const server = monitor.config.server(serverId)
+    if (!server) throw new Error(t('err.serverNotFound'))
+    const cmd = CMD.prune(mode)
+    // Onayda docker system df'in "geri kazanılabilir" değerleri gösterilir
+    const df = monitor.state(serverId)?.dockerMeta?.df ?? []
+    const reclaim = df
+      .filter((r) => (mode === 'images' ? r.type === 'Images' : r.type === 'Images' || r.type === 'Build Cache'))
+      .map((r) => `${r.type}: ${r.reclaimable}`)
+      .join(', ')
+    const key = mode === 'images' ? 'op.pruneImagesConfirm' : 'op.pruneSafeConfirm'
+    const ok = await confirm(t(key, { s: server.name, r: reclaim || '—' }), t('op.pruneOk'))
+    if (!ok) return { ok: false, cancelled: true }
+    const r = await monitor.execFor(serverId, cmd, 10 * 60_000)
+    monitor.refreshServer(serverId)
+    const out = (r.stdout + r.stderr).trim()
+    const freed = reclaimedSummary(out)
+    return {
+      ok: r.code === 0,
+      output: freed.length ? t('dock.pruned', { v: freed.join(' + ') }) : t('dock.prunedNone'),
+      error: r.code === 0 ? undefined : `${t('err.exitCode', { n: r.code })}: ${out.slice(-300)}`
+    }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+const CONTAINER_ACTIONS: Record<ContainerAction, { confirm: MsgKey; ok: MsgKey }> = {
+  start: { confirm: 'op.startConfirm', ok: 'op.startOk' },
+  stop: { confirm: 'op.stopConfirm', ok: 'op.stopOk' },
+  restart: { confirm: 'op.restartConfirm', ok: 'dlg.yesRestart' }
+}
+
+/** docker start/stop/restart: yalnızca bilinen container, yönetim eylemleri açıkken ve native onaydan sonra. */
+export async function containerAction(
   monitor: Monitor,
   serverId: string,
   name: string,
-  confirm: (message: string) => Promise<boolean>
+  action: ContainerAction,
+  confirm: (message: string, okLabel: string) => Promise<boolean>
 ): Promise<ActionResult> {
   try {
-    if (!monitor.config.settings.allowActions) throw new Error('Yönetim eylemleri ayarlardan kapalı')
+    if (!monitor.config.settings.allowActions) throw new Error(t('err.actionsDisabled'))
+    const def = CONTAINER_ACTIONS[action]
+    if (!def) throw new Error(t('err.badAction'))
     safeName(name)
     const server = monitor.config.server(serverId)
-    if (!server) throw new Error('Sunucu bulunamadı')
-    if (!monitor.state(serverId)?.docker?.containers.some((c) => c.name === name)) throw new Error('Bilinmeyen container')
-    const ok = await confirm(`${server.name} üzerinde "${name}" container'ı yeniden başlatılsın mı?`)
+    if (!server) throw new Error(t('err.serverNotFound'))
+    if (!monitor.state(serverId)?.docker?.containers.some((c) => c.name === name)) throw new Error(t('err.unknownContainer'))
+    const ok = await confirm(t(def.confirm, { s: server.name, name }), t(def.ok))
     if (!ok) return { ok: false, cancelled: true }
-    const r = await monitor.execFor(serverId, CMD.restartContainer(name), 90000)
-    return { ok: r.code === 0, output: (r.stdout + r.stderr).trim(), error: r.code === 0 ? undefined : `Çıkış kodu ${r.code}` }
+    const r = await monitor.execFor(serverId, CMD.containerAction(name, action), 90000)
+    // Docker durumu beklemeden tazelensin
+    monitor.refreshServer(serverId)
+    return { ok: r.code === 0, output: (r.stdout + r.stderr).trim(), error: r.code === 0 ? undefined : t('err.exitCode', { n: r.code }) }
   } catch (e) {
     return { ok: false, error: (e as Error).message }
   }
@@ -163,11 +262,11 @@ const PROM_QUERIES: Record<PromPreset, { q: string; label: (m: Record<string, st
 export async function prometheusQuery(monitor: Monitor, serverId: string, preset: PromPreset, hours: number): Promise<PromResult> {
   try {
     const server = monitor.config.server(serverId)
-    if (!server?.prometheus) throw new Error('Bu sunucu için Prometheus kapalı')
+    if (!server?.prometheus) throw new Error(t('op.promDisabled'))
     const def = PROM_QUERIES[preset]
-    if (!def) throw new Error('Bilinmeyen sorgu')
+    if (!def) throw new Error(t('err.unknownQuery'))
     const conn = monitor.connection(serverId)
-    if (!conn?.isReady) throw new Error('SSH bağlı değil')
+    if (!conn?.isReady) throw new Error(t('err.sshNotConnected'))
     const h = Math.max(1, Math.min(24 * 30, Math.round(hours)))
     const end = Math.floor(Date.now() / 1000)
     const start = end - h * 3600
@@ -193,7 +292,7 @@ export async function prometheusQuery(monitor: Monitor, serverId: string, preset
           res.on('end', () => resolve(data))
         }
       )
-      req.on('timeout', () => req.destroy(new Error('Prometheus zaman aşımı')))
+      req.on('timeout', () => req.destroy(new Error(t('op.promTimeout'))))
       req.on('error', reject)
       req.end()
     })
@@ -202,7 +301,7 @@ export async function prometheusQuery(monitor: Monitor, serverId: string, preset
       error?: string
       data?: { result: { metric: Record<string, string>; values: [number, string][] }[] }
     }
-    if (json.status !== 'success') throw new Error(json.error ?? 'Prometheus hatası')
+    if (json.status !== 'success') throw new Error(json.error ?? t('op.promError'))
     return {
       ok: true,
       series: (json.data?.result ?? []).map((r) => ({

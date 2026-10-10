@@ -1,4 +1,5 @@
 import type { Issue, NotifyTestResult } from '@shared/types'
+import { t } from '@shared/i18n'
 
 export type FetchFn = typeof fetch
 
@@ -23,8 +24,8 @@ const TOKEN_RE = /^\d{5,}:[A-Za-z0-9_-]{30,}$/
 const CHAT_RE = /^(-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{4,31})$/
 
 export function validateTelegram(token: string, chatId: string): void {
-  if (!TOKEN_RE.test(token)) throw new Error('Telegram bot token biçimi geçersiz (örn. 123456789:AAH...)')
-  if (!CHAT_RE.test(chatId)) throw new Error('Chat ID geçersiz (sayı veya @kanaladi olmalı)')
+  if (!TOKEN_RE.test(token)) throw new Error(t('rn.badToken'))
+  if (!CHAT_RE.test(chatId)) throw new Error(t('rn.badChat'))
 }
 
 export function validateWebhookUrl(url: string): string {
@@ -32,9 +33,9 @@ export function validateWebhookUrl(url: string): string {
   try {
     u = new URL(url)
   } catch {
-    throw new Error('Webhook URL geçersiz')
+    throw new Error(t('rn.badWebhook'))
   }
-  if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new Error('Webhook URL http(s) olmalı')
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new Error(t('rn.webhookScheme'))
   return u.toString()
 }
 
@@ -53,7 +54,7 @@ export function messageFromIssue(issue: Issue, kind: 'open' | 'resolved', server
 
 export function formatText(m: RemoteMessage): string {
   const head =
-    m.kind === 'test' ? '🔔 ServerPulse test mesajı' : m.kind === 'resolved' ? `✅ Düzeldi: ${m.title}` : `${m.severity === 'crit' ? '🔴' : '🟠'} ${m.title}`
+    m.kind === 'test' ? t('rn.testHead') : m.kind === 'resolved' ? t('notif.resolved', { title: m.title }) : `${m.severity === 'crit' ? '🔴' : '🟠'} ${m.title}`
   return [head, [m.server, m.detail].filter(Boolean).join(' · ')].filter(Boolean).join('\n')
 }
 

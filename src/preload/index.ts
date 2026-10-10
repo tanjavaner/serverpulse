@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { EVT_MAINT, EVT_NAVIGATE, EVT_SNAPSHOT, EVT_UPDATE, INVOKE_CHANNELS, type RendererApi } from '@shared/ipc'
-import type { AppSnapshot, MaintEvent, UpdateStatus } from '@shared/types'
+import { EVT_MAINT, EVT_NAVIGATE, EVT_SNAPSHOT, EVT_TERM, EVT_UPDATE, INVOKE_CHANNELS, type RendererApi } from '@shared/ipc'
+import type { AppSnapshot, MaintEvent, TermEvent, UpdateStatus } from '@shared/types'
 
 const allowed = new Set<string>(INVOKE_CHANNELS)
 
@@ -28,6 +28,11 @@ const api: RendererApi = {
     const listener = (_e: unknown, s: UpdateStatus): void => cb(s)
     ipcRenderer.on(EVT_UPDATE, listener)
     return () => ipcRenderer.removeListener(EVT_UPDATE, listener)
+  },
+  onTerm(cb) {
+    const listener = (_e: unknown, ev: TermEvent): void => cb(ev)
+    ipcRenderer.on(EVT_TERM, listener)
+    return () => ipcRenderer.removeListener(EVT_TERM, listener)
   },
   platform: process.platform
 }

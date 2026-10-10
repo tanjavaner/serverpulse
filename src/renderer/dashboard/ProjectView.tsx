@@ -1,21 +1,18 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import type { AppSnapshot, ProjectConfig, ServerConfig } from '@shared/types'
+import { t } from '@shared/i18n'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/hooks'
-import { fmtBytes, fmtMs } from '../lib/format'
+import { fmtBytes, fmtMs, fmtPct } from '../lib/format'
 import { downsample, MultiLine, type Point } from '../components/charts'
-import { Button } from '../components/ui'
+import { Alert, Button } from '../components/ui'
+import { pushLocal, stepLabel, useMaintLog } from '../lib/maintLog'
+import { cleanErr } from './ServerForm'
+import { LiveLog } from './LiveLog'
 import { ProjectCard } from './ProjectCard'
-import { RangePicker } from './HostCharts'
+import { hourRanges, RangePicker } from './HostCharts'
 import { LogViewer, type LogTarget } from './LogViewer'
 import type { Nav } from './App'
-
-const RANGES = [
-  { h: 1, label: '1 sa' },
-  { h: 6, label: '6 sa' },
-  { h: 24, label: '24 sa' },
-  { h: 72, label: '72 sa' }
-]
 
 /** Satırları (ts, anahtar, değer) → grafik noktalarına pivotlar. */
 function pivot<T extends { ts: number }>(rows: T[], keyOf: (r: T) => string, valOf: (r: T) => number | null, keys: string[]): Point[] {
@@ -61,6 +58,22 @@ export function ProjectView({ snap, server, project, nav }: { snap: AppSnapshot;
     nav({ view: 'server', serverId: server.id })
   }
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deployMsg, setDeployMsg] = useState<{ kind: 'ok' | 'error' | 'warn'; text: string } | null>(null)
+  const deployLog = useMaintLog(server.id).filter((l) => l.step === 'deploy')
+  const running = snap.states[server.id]?.maintenance
+  const deploying = running?.step === 'deploy'
+
+  const deploy = async (): Promise<void> => {
+    setDeployMsg(null)
+    pushLocal(server.id, 'deploy', t('maint.started', { s: `${stepLabel('deploy')} · ${project.name}` }))
+    try {
+      const r = await api.invoke('maint:deploy', server.id, project.id)
+      if (r.cancelled) setDeployMsg({ kind: 'warn', text: t('maint.cancelled', { s: stepLabel('deploy') }) })
+      else setDeployMsg(r.ok ? { kind: 'ok', text: r.summary ?? '' } : { kind: 'error', text: t('maint.failed', { s: stepLabel('deploy'), e: r.error ?? '' }) })
+    } catch (e) {
+      setDeployMsg({ kind: 'error', text: cleanErr(e) })
+    }
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -69,35 +82,43 @@ export function ProjectView({ snap, server, project, nav }: { snap: AppSnapshot;
           ← {server.name}
         </button>
         <div className="ml-auto flex gap-2">
-          <Button onClick={() => nav({ view: 'editProject', serverId: server.id, projectId: project.id })}>Düzenle</Button>
+          {snap.settings.allowActions && project.containers.length ? (
+            <Button variant="primary" disabled={!!running} onClick={() => void deploy()} title={t('project.deployHint')}>
+              {deploying ? t('project.deploying') : t('project.deploy')}
+            </Button>
+          ) : null}
+          <Button onClick={() => nav({ view: 'editProject', serverId: server.id, projectId: project.id })}>{t('common.edit')}</Button>
           {confirmDelete ? (
             <>
               <Button variant="danger" onClick={() => void remove()}>
-                Evet, sil
+                {t('common.yesDelete')}
               </Button>
               <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
-                Vazgeç
+                {t('common.cancel')}
               </Button>
             </>
           ) : (
             <Button variant="danger" onClick={() => setConfirmDelete(true)}>
-              Projeyi sil
+              {t('project.delete')}
             </Button>
           )}
         </div>
       </div>
 
+      {deployMsg ? <Alert kind={deployMsg.kind}>{deployMsg.text}</Alert> : null}
+      {deploying || deployLog.length ? <LiveLog lines={deployLog} height="h-56" /> : null}
+
       <ProjectCard project={project} st={st} onLogs={(name) => setLogs({ serverId: server.id, kind: 'container', name })} />
 
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Geçmiş</h3>
-        <RangePicker value={hours} options={RANGES} onChange={setHours} />
+        <h3 className="text-sm font-semibold">{t('common.history')}</h3>
+        <RangePicker value={hours} options={hourRanges()} onChange={setHours} />
       </div>
-      {project.httpChecks.length ? <MultiLine title="HTTP yanıt süresi" data={httpChart.data} series={httpChart.series} format={(v) => fmtMs(v)} /> : null}
+      {project.httpChecks.length ? <MultiLine title={t('project.httpLatency')} data={httpChart.data} series={httpChart.series} format={(v) => fmtMs(v)} /> : null}
       {ctrNames.length ? (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <MultiLine title="Container CPU %" data={cpuChart} series={ctrSeries} format={(v) => `%${v.toFixed(1)}`} />
-          <MultiLine title="Container RAM" data={memChart} series={ctrSeries} format={(v) => fmtBytes(v)} />
+          <MultiLine title={t('project.ctrCpu')} data={cpuChart} series={ctrSeries} format={(v) => fmtPct(v, 1)} />
+          <MultiLine title={t('project.ctrRam')} data={memChart} series={ctrSeries} format={(v) => fmtBytes(v)} />
         </div>
       ) : null}
 
