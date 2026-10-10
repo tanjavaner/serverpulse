@@ -135,7 +135,7 @@ function ServerRow({ server, snap, sev }: { server: ServerConfig; snap: AppSnaps
         ) : null}
         {calls != null ? (
           <span>
-            📞 <b className="text-ink">{calls}</b> {t('widget.activeCalls')}
+            📞 <b className="text-ink">{calls}</b> {t(calls === 1 ? 'widget.activeCall' : 'widget.activeCalls')}
           </span>
         ) : null}
       </div>

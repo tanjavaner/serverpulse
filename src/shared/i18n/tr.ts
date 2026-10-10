@@ -74,6 +74,7 @@ export const tr = {
   'widget.containersHealthy': 'container sağlıklı',
   'widget.dockerUnreadable': 'Docker okunamıyor',
   'widget.activeCalls': 'aktif çağrı',
+  'widget.activeCall': 'aktif çağrı',
   'widget.moreIssues': '+{n} sorun daha',
 
   // --------------------------------------------------------------- olaylar

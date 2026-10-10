@@ -64,7 +64,7 @@ export function SparkArea({
         </div>
       ) : (
         <ResponsiveContainer width="100%" height={height}>
-          <AreaChart data={data} margin={{ top: 6, right: 6, bottom: 0, left: -18 }}>
+          <AreaChart data={data} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
             <defs>
               <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={color} stopOpacity={0.28} />
@@ -73,7 +73,7 @@ export function SparkArea({
             </defs>
             <CartesianGrid stroke="var(--grid)" vertical={false} />
             <XAxis dataKey="ts" type="number" domain={['dataMin', 'dataMax']} scale="time" tickFormatter={clock} minTickGap={40} {...axisProps} />
-            <YAxis domain={domain} width={44} tickFormatter={(v: number) => format(v).replace(/\.0(?=\D|$)/, '')} {...axisProps} />
+            <YAxis domain={domain} width={38} tickFormatter={(v: number) => format(v).replace(/\.0(?=\D|$)/, '')} {...axisProps} />
             <Tooltip
               {...tooltipStyle}
               labelFormatter={(v) => dateTime(Number(v))}
@@ -122,10 +122,10 @@ export function MultiLine({
         </div>
       ) : (
         <ResponsiveContainer width="100%" height={height}>
-          <LineChart data={data} margin={{ top: 6, right: 6, bottom: 0, left: -10 }}>
+          <LineChart data={data} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
             <CartesianGrid stroke="var(--grid)" vertical={false} />
             <XAxis dataKey="ts" type="number" domain={['dataMin', 'dataMax']} scale="time" tickFormatter={clock} minTickGap={40} {...axisProps} />
-            <YAxis width={52} domain={domain ?? [0, 'auto']} tickFormatter={format} {...axisProps} />
+            <YAxis width={60} domain={domain ?? [0, 'auto']} tickFormatter={format} {...axisProps} />
             <Tooltip
               {...tooltipStyle}
               labelFormatter={(v) => dateTime(Number(v))}

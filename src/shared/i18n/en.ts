@@ -73,6 +73,7 @@ export const en: Messages = {
   'widget.containersHealthy': 'containers healthy',
   'widget.dockerUnreadable': 'Docker unreadable',
   'widget.activeCalls': 'active calls',
+  'widget.activeCall': 'active call',
   'widget.moreIssues': '+{n} more {{n|issue|issues}}',
 
   // --------------------------------------------------------------- events
@@ -147,7 +148,7 @@ export const en: Messages = {
   'project.pgReady': 'ready',
   'project.pgNotReady': 'not ready',
   'project.pgConns': ' · {n} {{n|connection|connections}}',
-  'project.astSummary': '{calls} active calls · {ch} channels · {proc} processed',
+  'project.astSummary': '{calls} active {{calls|call|calls}} · {ch} {{ch|channel|channels}} · {proc} processed',
   'project.astNoTrunks': 'No registered trunks configured',
   'project.astSystemdOnly': 'Only the systemd state is monitored',
 
@@ -179,7 +180,7 @@ export const en: Messages = {
   'disc.introBefore': 'Only read-only commands are run:',
   'disc.introAfter': 'Nothing is changed on the server.',
   'disc.scanningServer': 'Scanning the server…',
-  'disc.found': 'Found {c} containers, {d} domains ({list}) and {u} running services.',
+  'disc.found': 'Found {c} {{c|container|containers}}, {d} {{d|domain|domains}} ({list}) and {u} running {{u|service|services}}.',
   'disc.containers': 'Containers:',
   'disc.httpChecks': 'HTTP checks:',
   'disc.fromPc': 'from this PC',
@@ -531,7 +532,7 @@ export const en: Messages = {
   'mm.noSudoApt': 'No passwordless sudo permission for apt-get; packages cannot be upgraded. The “Prepare server” script in the server settings adds the required sudoers rule.',
   'mm.noSudoReboot': 'No passwordless sudo permission for systemctl reboot; the server cannot be rebooted. The “Prepare server” script in the server settings adds the required sudoers rule.',
   'mm.warning': 'Warning: {w}',
-  'mm.statusSummary': 'kernel {k}, reboot {r}, {n} updates ({s} security)',
+  'mm.statusSummary': 'kernel {k}, reboot {r}, {n} {{n|update|updates}} ({s} security)',
   'mm.rebootReq': 'required',
   'mm.rebootNotReq': 'not required',
   'mm.noPg': 'No PostgreSQL container found. Enter the container/user in the server settings.',
@@ -571,7 +572,7 @@ export const en: Messages = {
   'mm.noRestartConfirm': 'Containers with restart policy "no" that will NOT come back after the reboot:',
   'mm.expectedKernel': 'Expected kernel: {k}',
   'mm.rebootOk': 'Yes, reboot',
-  'mm.preReboot': 'Before reboot: kernel {k}, {n} running containers',
+  'mm.preReboot': 'Before reboot: kernel {k}, {n} running {{n|container|containers}}',
   'mm.wontComeBack': '⚠ Containers that will not come back: {list}',
   'mm.rebootRejected': 'The reboot command failed: {e}',
   'mm.rebootSent': 'Reboot command sent. Waiting for the server to come back (every 10 s, up to 5 min)…',
@@ -606,7 +607,7 @@ export const en: Messages = {
   'mm.restoring': 'Restoring with psql (existing role/DB warnings are normal)…',
   'mm.restoreExit': 'Restore exit code {c}',
   'mm.expectedWarnings': 'Ignored {n} expected "already exists" {{n|warning|warnings}} (existing role/DB/table)',
-  'mm.restoreErrors': 'The restore finished with {n} errors; data may be incomplete or conflicting. First error: {e}',
+  'mm.restoreErrors': 'The restore finished with {n} {{n|error|errors}}; data may be incomplete or conflicting. First error: {e}',
   'mm.restoreSummaryWarn': ' ({n} expected {{n|warning|warnings}})',
 
   // --------------------------------------------------------------- server preparation
@@ -650,7 +651,7 @@ export const en: Messages = {
   'xfer.exportTitle': 'Save configuration',
   'xfer.importTitle': 'Choose the file to import',
   'xfer.exported': 'Saved: {p}',
-  'xfer.summary': '{s} servers, {p} projects · {d}',
+  'xfer.summary': '{s} {{s|server|servers}}, {p} {{p|project|projects}} · {d}',
   'xfer.encrypted': 'The file contains encrypted secrets; enter its password.',
   'xfer.importSettings': 'Also import settings (theme, intervals, thresholds, notification preferences)',
   'xfer.doImport': 'Import',
@@ -838,7 +839,7 @@ export const en: Messages = {
   'disc.merged': 'Merged {n} projects into "{name}". You can rename it on the card.',
   'server.resetProjects': 'Delete all and rediscover',
   'server.resetConfirm':
-    'Delete the {n} project definitions of this server and run discovery again? Nothing changes on the server; only the project definitions in this app are deleted.',
+    'Delete the {n} project {{n|definition|definitions}} of this server and run discovery again? Nothing changes on the server; only the project definitions in this app are deleted.',
   'server.resetYes': 'Yes, delete and discover',
 
   // @@main-keys
