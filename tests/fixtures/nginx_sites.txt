@@ -4,9 +4,9 @@ server {
     server_name _;
     return 444;
 }
-@@F /etc/nginx/sites-enabled/api-restaurant.yukselyazilim.com
+@@F /etc/nginx/sites-enabled/api-restaurant.example.com
 server {
-    server_name api-restaurant.yukselyazilim.com;
+    server_name api-restaurant.example.com;
 
     location / {
         proxy_pass http://127.0.0.1:8081;
@@ -15,20 +15,20 @@ server {
     }
 
     listen 443 ssl; # managed by Certbot
-    ssl_certificate /etc/letsencrypt/live/api-restaurant.yukselyazilim.com/fullchain.pem; # managed by Certbot
-    ssl_certificate_key /etc/letsencrypt/live/api-restaurant.yukselyazilim.com/privkey.pem; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/api-restaurant.example.com/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/api-restaurant.example.com/privkey.pem; # managed by Certbot
 }
 server {
-    if ($host = api-restaurant.yukselyazilim.com) {
+    if ($host = api-restaurant.example.com) {
         return 301 https://$host$request_uri;
     } # managed by Certbot
     listen 80;
-    server_name api-restaurant.yukselyazilim.com;
+    server_name api-restaurant.example.com;
     return 404; # managed by Certbot
 }
-@@F /etc/nginx/sites-enabled/yukselyazilim.com
+@@F /etc/nginx/sites-enabled/example.com
 server {
-    server_name restaurant.yukselyazilim.com tanitim.yukselyazilim.com;
+    server_name restaurant.example.com www.example.com;
     # proxy_pass http://127.0.0.1:9999;  eski yapılandırma
     location / {
         proxy_pass http://127.0.0.1:8080/;
@@ -38,5 +38,5 @@ server {
         proxy_pass http://127.0.0.1:8081/api/;
     }
     listen 443 ssl;
-    ssl_certificate /etc/letsencrypt/live/restaurant.yukselyazilim.com/fullchain.pem;
+    ssl_certificate /etc/letsencrypt/live/restaurant.example.com/fullchain.pem;
 }

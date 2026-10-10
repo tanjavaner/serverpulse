@@ -16,14 +16,14 @@ const ctr = (name: string, composeProject: string, workingDir: string): Containe
 })
 
 describe('birleştirme önerileri', () => {
-  it('aynı anlamlı üst dizindeki projeleri önerir (sesli_asistan/backend + socket)', () => {
+  it('aynı anlamlı üst dizindeki projeleri önerir (voice_assistant/backend + socket)', () => {
     const s = mergeSuggestions([
-      proj('a', '/opt/apps/sesli_asistan/backend'),
-      proj('b', '/opt/apps/sesli_asistan/socket'),
+      proj('a', '/opt/apps/voice_assistant/backend'),
+      proj('b', '/opt/apps/voice_assistant/socket'),
       proj('c', '/opt/apps/blog'),
       proj('d', '/opt/apps/shop')
     ])
-    expect(s).toEqual([{ dir: '/opt/apps/sesli_asistan', name: 'sesli_asistan', ids: ['a', 'b'] }])
+    expect(s).toEqual([{ dir: '/opt/apps/voice_assistant', name: 'voice_assistant', ids: ['a', 'b'] }])
   })
 
   it('genel dizinlerin (apps, srv, opt…) altındaki farklı projeleri birleştirmeyi önermez', () => {

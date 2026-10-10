@@ -76,18 +76,18 @@ describe('bakım komutları', () => {
   })
 
   it('komut üreticileri geçersiz girdiyi reddeder', () => {
-    expect(() => CMD.maintBackup('pg-2026-09-30_0215.sql.gz', 'pg; reboot', 'asistan')).toThrow()
+    expect(() => CMD.maintBackup('pg-2026-09-30_0215.sql.gz', 'pg; reboot', 'appuser')).toThrow()
     expect(() => CMD.maintBackup('pg-2026-09-30_0215.sql.gz', 'backend-postgres-1', '$(id)')).toThrow()
-    expect(() => CMD.maintRestore('evil.sql.gz', 'backend-postgres-1', 'asistan')).toThrow()
+    expect(() => CMD.maintRestore('evil.sql.gz', 'backend-postgres-1', 'appuser')).toThrow()
     expect(() => CMD.pgEnvUser('a b')).toThrow()
     expect(() => CMD.maintUpgradeStart('20260930; id')).toThrow()
     expect(() => CMD.maintUpgradePoll(jobStamp(new Date()), -1)).toThrow()
   })
 
   it('yedek komutu pipefail kullanır ve hatada yarım dosyayı siler', () => {
-    const c = CMD.maintBackup('pg-2026-09-30_0215.sql.gz', 'backend-postgres-1', 'asistan')
+    const c = CMD.maintBackup('pg-2026-09-30_0215.sql.gz', 'backend-postgres-1', 'appuser')
     expect(c).toMatch(/^bash -o pipefail -c '/)
-    expect(c).toContain('docker exec backend-postgres-1 pg_dumpall -U asistan | gzip >')
+    expect(c).toContain('docker exec backend-postgres-1 pg_dumpall -U appuser | gzip >')
     expect(c).toContain('rm -f "$HOME/backups/pg-2026-09-30_0215.sql.gz"')
     expect(CMD.maintBackupPrune()).toContain('tail -n +8')
   })

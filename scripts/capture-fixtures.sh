@@ -2,9 +2,9 @@
 # Parser testleri için gerçek komut çıktılarını VDS'ten toplar. SALT OKUNURDUR; hiçbir şeyi değiştirmez.
 #
 # Kullanım (PC'den):
-#   scp scripts/capture-fixtures.sh deploy@100.99.9.0:/tmp/
-#   ssh deploy@100.99.9.0 'bash /tmp/capture-fixtures.sh /tmp/sp-fixtures && tar -C /tmp -czf /tmp/sp-fixtures.tgz sp-fixtures'
-#   scp deploy@100.99.9.0:/tmp/sp-fixtures.tgz . && tar -xzf sp-fixtures.tgz
+#   scp scripts/capture-fixtures.sh deploy@100.64.0.10:/tmp/
+#   ssh deploy@100.64.0.10 'bash /tmp/capture-fixtures.sh /tmp/sp-fixtures && tar -C /tmp -czf /tmp/sp-fixtures.tgz sp-fixtures'
+#   scp deploy@100.64.0.10:/tmp/sp-fixtures.tgz . && tar -xzf sp-fixtures.tgz
 #   -> sp-fixtures/* dosyalarını tests/fixtures/ altına kopyalayıp `npm test` çalıştırın.
 #
 # Not: nginx dosyaları ve docker label'ları domain/dizin bilgisi içerir; çıktıyı paylaşmadan önce gözden geçirin.

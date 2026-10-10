@@ -3,7 +3,7 @@ import { CMD, buildScript, parseSections, safeName, UnsafeInputError } from '../
 
 describe('komut whitelist doğrulaması', () => {
   it('geçerli adları kabul eder', () => {
-    for (const n of ['backend-api-1', 'sesli_asistan', 'node_exporter', 'a.b-c_d']) expect(safeName(n)).toBe(n)
+    for (const n of ['backend-api-1', 'voice_assistant', 'node_exporter', 'a.b-c_d']) expect(safeName(n)).toBe(n)
   })
 
   it('shell enjeksiyonu içeren adları reddeder', () => {

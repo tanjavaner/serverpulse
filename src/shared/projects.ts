@@ -49,7 +49,7 @@ export interface MergeSuggestion {
 }
 
 /**
- * Aynı anlamlı üst dizini paylaşan öneriler (ör. /opt/apps/sesli_asistan/backend ve …/socket):
+ * Aynı anlamlı üst dizini paylaşan öneriler (ör. /opt/apps/voice_assistant/backend ve …/socket):
  * büyük ihtimalle tek bir ürünün parçaları. Yalnızca öneri; birleştirmeyi kullanıcı onaylar.
  */
 export function mergeSuggestions(projects: Pick<ProjectConfig, 'id' | 'workingDir'>[]): MergeSuggestion[] {

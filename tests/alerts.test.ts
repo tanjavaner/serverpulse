@@ -7,7 +7,7 @@ const th = DEFAULT_SETTINGS.thresholds
 const server: ServerConfig = {
   id: 's1',
   name: 'VDS',
-  host: '100.99.9.0',
+  host: '100.64.0.10',
   port: 22,
   username: 'deploy',
   authType: 'key',
@@ -20,18 +20,18 @@ const server: ServerConfig = {
 const project: ProjectConfig = {
   id: 'p1',
   serverId: 's1',
-  name: 'yukselyazilim.com-web',
-  containers: ['yuksel-yazilim-frontend'],
-  containerRoles: { 'yuksel-yazilim-frontend': 'frontend' },
+  name: 'example.com-web',
+  containers: ['example-frontend'],
+  containerRoles: { 'example-frontend': 'frontend' },
   systemdUnits: [],
-  httpChecks: [{ id: 'h1', name: 'restaurant.yukselyazilim.com', role: 'frontend', mode: 'public', url: 'https://restaurant.yukselyazilim.com/' }],
+  httpChecks: [{ id: 'h1', name: 'restaurant.example.com', role: 'frontend', mode: 'public', url: 'https://restaurant.example.com/' }],
   asterisk: true
 }
 
 function ctr(p: Partial<ContainerInfo>): ContainerInfo {
   return {
     id: 'x',
-    name: 'yuksel-yazilim-frontend',
+    name: 'example-frontend',
     image: 'img',
     state: 'running',
     status: 'Up 1 hour',
@@ -71,7 +71,7 @@ function healthy(): ServerState {
     docker: { ts: 0, available: true, containers: [ctr({})] },
     systemd: { ts: 0, units: [{ name: 'nginx', state: 'active' }], failed: [] },
     http: { h1: { checkId: 'h1', ts: 0, ok: true, status: 200, ms: 80 } },
-    ssl: { 'restaurant.yukselyazilim.com': { host: 'restaurant.yukselyazilim.com', ts: 0, daysLeft: 60, authorized: true } },
+    ssl: { 'restaurant.example.com': { host: 'restaurant.example.com', ts: 0, daysLeft: 60, authorized: true } },
     postgres: {},
     asterisk: {
       ts: 0,
@@ -79,7 +79,7 @@ function healthy(): ServerState {
       activeChannels: 0,
       activeCalls: 0,
       callsProcessed: 0,
-      registrations: [{ name: 'netgsm', status: 'Registered' }],
+      registrations: [{ name: 'siptrunk', status: 'Registered' }],
       endpoints: []
     }
   }
@@ -96,20 +96,20 @@ describe('evaluateServer', () => {
     const st = healthy()
     st.docker!.containers = [ctr({ state: 'exited', status: 'Exited (0) 5 seconds ago' })]
     const i = evaluateServer(server, [project], st, th, NOW)
-    expect(i).toEqual([expect.objectContaining({ key: 's1:ctr:yuksel-yazilim-frontend:state', severity: 'crit', projectId: 'p1' })])
+    expect(i).toEqual([expect.objectContaining({ key: 's1:ctr:example-frontend:state', severity: 'crit', projectId: 'p1' })])
   })
 
   it('unhealthy ve restart artışı', () => {
     const st = healthy()
     st.docker!.containers = [ctr({ health: 'unhealthy', status: 'Up (unhealthy)', lastRestartIncreaseAt: NOW - 1000, restartCount: 3 })]
     const keys = evaluateServer(server, [project], st, th, NOW).map((x) => x.key)
-    expect(keys).toEqual(['s1:ctr:yuksel-yazilim-frontend:health', 's1:ctr:yuksel-yazilim-frontend:restart'])
+    expect(keys).toEqual(['s1:ctr:example-frontend:health', 's1:ctr:example-frontend:restart'])
   })
 
   it('container kaybolursa', () => {
     const st = healthy()
     st.docker!.containers = []
-    expect(evaluateServer(server, [project], st, th, NOW)[0].key).toBe('s1:ctr:yuksel-yazilim-frontend:missing')
+    expect(evaluateServer(server, [project], st, th, NOW)[0].key).toBe('s1:ctr:example-frontend:missing')
   })
 
   it('erişilemiyor: 2 ardışık başarısızlıktan sonra, diğer kontroller bastırılır', () => {
@@ -166,9 +166,9 @@ describe('evaluateServer', () => {
 
   it('SSL 14 günden az', () => {
     const st = healthy()
-    st.ssl['restaurant.yukselyazilim.com'].daysLeft = 10
+    st.ssl['restaurant.example.com'].daysLeft = 10
     expect(evaluateServer(server, [project], st, th, NOW)[0]).toMatchObject({ severity: 'warn' })
-    st.ssl['restaurant.yukselyazilim.com'].daysLeft = 1
+    st.ssl['restaurant.example.com'].daysLeft = 1
     expect(evaluateServer(server, [project], st, th, NOW)[0]).toMatchObject({ severity: 'crit' })
   })
 
@@ -183,8 +183,8 @@ describe('evaluateServer', () => {
 
   it('Asterisk trunk kayıtlı değil (sadece tam modda)', () => {
     const st = healthy()
-    st.asterisk!.registrations = [{ name: 'netgsm', status: 'Rejected' }]
-    expect(evaluateServer(server, [project], st, th, NOW)[0].key).toBe('s1:ast:reg:netgsm')
+    st.asterisk!.registrations = [{ name: 'siptrunk', status: 'Rejected' }]
+    expect(evaluateServer(server, [project], st, th, NOW)[0].key).toBe('s1:ast:reg:siptrunk')
     st.asterisk!.mode = 'limited'
     expect(evaluateServer(server, [project], st, th, NOW)).toEqual([])
   })

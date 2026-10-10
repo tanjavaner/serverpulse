@@ -2,8 +2,8 @@
  <Registration/ServerURI..............................>  <Auth....................>  <Status.......>
 ==========================================================================================
 
- netgsm-trunk/sip:sip.netgsm.com.tr:5060                 netgsm-auth                 Registered        (exp. 3547s)
- yedek-trunk/sip:sip.example.net                         yedek-auth                  Rejected
+ siptrunk-trunk/sip:sip.provider.example:5060                 siptrunk-auth                 Registered        (exp. 3547s)
+ backup-trunk/sip:sip.example.net                         backup-auth                  Rejected
 
 Objects found: 2
 

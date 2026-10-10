@@ -91,7 +91,7 @@ describe('docker', () => {
     const api = ps.find((c) => c.name === 'backend-api-1')!
     expect(api.health).toBe('healthy')
     expect(api.composeProject).toBe('backend')
-    expect(api.workingDir).toBe('/opt/apps/sesli_asistan/backend')
+    expect(api.workingDir).toBe('/opt/apps/voice_assistant/backend')
     expect(ps.every((c) => c.state === 'running')).toBe(true)
   })
 
@@ -109,13 +109,13 @@ describe('docker', () => {
     const ps = parseDockerPs(fx('docker_ps.jsonl'))
     const stats = parseDockerStats(fx('docker_stats.jsonl'))
     const ins = parseInspectLines(fx('docker_inspect.txt'))
-    const prev = new Map([['sesli-asistan-telephony', { restartCount: 1, lastRestartIncreaseAt: null }]])
+    const prev = new Map([['voice-assistant-telephony', { restartCount: 1, lastRestartIncreaseAt: null }]])
     const merged = mergeDocker(ps, stats, ins, prev, 5000)
-    const tel = merged.find((c) => c.name === 'sesli-asistan-telephony')!
+    const tel = merged.find((c) => c.name === 'voice-assistant-telephony')!
     expect(tel.restartCount).toBe(2)
     expect(tel.lastRestartIncreaseAt).toBe(5000)
     expect(tel.cpuPct).toBeCloseTo(3.4)
-    const fe = merged.find((c) => c.name === 'yuksel-yazilim-frontend')!
+    const fe = merged.find((c) => c.name === 'example-frontend')!
     expect(fe.memBytes).toBeCloseTo(7.8 * 1024 * 1024)
     expect(fe.lastRestartIncreaseAt).toBeNull()
   })
@@ -189,15 +189,15 @@ describe('asterisk', () => {
   })
   it('pjsip show registrations', () => {
     expect(parseRegistrations(fx('asterisk_registrations.txt'))).toEqual([
-      { name: 'netgsm-trunk/sip:sip.netgsm.com.tr:5060', status: 'Registered' },
-      { name: 'yedek-trunk/sip:sip.example.net', status: 'Rejected' }
+      { name: 'siptrunk-trunk/sip:sip.provider.example:5060', status: 'Registered' },
+      { name: 'backup-trunk/sip:sip.example.net', status: 'Rejected' }
     ])
   })
   it('pjsip show endpoints', () => {
     expect(parseEndpoints(fx('asterisk_endpoints.txt'))).toEqual([
       { name: '1001', state: 'Not in use' },
-      { name: 'netgsm-trunk', state: 'In use' },
-      { name: 'yedek-trunk', state: 'Unavailable' }
+      { name: 'siptrunk-trunk', state: 'In use' },
+      { name: 'backup-trunk', state: 'Unavailable' }
     ])
   })
   it('sudo reddini tanır', () => {
@@ -210,16 +210,16 @@ describe('ss ve nginx', () => {
   it('ss -tlnH', () => {
     const r = parseSsListen(fx('ss_tln.txt'))
     expect(r).toContainEqual({ addr: '127.0.0.1', port: 8082 })
-    expect(r).toContainEqual({ addr: '100.99.9.0', port: 9100 })
+    expect(r).toContainEqual({ addr: '100.64.0.10', port: 9100 })
     expect(r).toContainEqual({ addr: '::', port: 22 })
   })
 
   it('nginx server blokları: domain → proxy portu', () => {
     const b = parseNginxSites(fx('nginx_sites.txt'))
-    const api = b.find((x) => x.serverNames.includes('api-restaurant.yukselyazilim.com') && x.ssl)!
+    const api = b.find((x) => x.serverNames.includes('api-restaurant.example.com') && x.ssl)!
     expect(api.proxyPorts).toEqual([8081])
-    const web = b.find((x) => x.serverNames.includes('restaurant.yukselyazilim.com'))!
-    expect(web.serverNames).toEqual(['restaurant.yukselyazilim.com', 'tanitim.yukselyazilim.com'])
+    const web = b.find((x) => x.serverNames.includes('restaurant.example.com'))!
+    expect(web.serverNames).toEqual(['restaurant.example.com', 'www.example.com'])
     expect(web.proxyPorts).toEqual([8080, 8081]) // yorum satırındaki 9999 dahil edilmez
     expect(web.primaryPort).toBe(8080) // location / hedefi
     expect(api.primaryPort).toBe(8081)

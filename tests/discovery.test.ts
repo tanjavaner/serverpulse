@@ -4,7 +4,7 @@ import { parseDockerPs } from '../src/main/parsers/docker'
 import { parseNginxSites, parseRunningUnits } from '../src/main/parsers/misc'
 import { buildProposals, guessRole, projectNameFrom, suggestUnits } from '../src/main/discovery/proposals'
 
-// Kabul referansı: plandaki VDS envanteri.
+// Kabul referansı: tests/fixtures altındaki örnek VDS envanteri.
 describe('keşif → proje önerileri (VDS referansı)', () => {
   const containers = parseDockerPs(fx('docker_ps.jsonl'))
   const runningUnits = parseRunningUnits(fx('systemctl_running.txt'))
@@ -13,18 +13,18 @@ describe('keşif → proje önerileri (VDS referansı)', () => {
   const byName = Object.fromEntries(projects.map((p) => [p.name, p]))
 
   it('4 proje bulur', () => {
-    expect(Object.keys(byName).sort()).toEqual(['backend', 'monitoring', 'sesli_asistan', 'yukselyazilim.com-web'])
+    expect(Object.keys(byName).sort()).toEqual(['backend', 'example.com-web', 'monitoring', 'voice_assistant'])
   })
 
-  it('sesli_asistan: api + telephony + systemd asterisk', () => {
-    const p = byName.sesli_asistan
-    expect(p.workingDir).toBe('/opt/apps/sesli_asistan/repo')
-    expect(p.containers).toEqual(['sesli-asistan-api', 'sesli-asistan-telephony'])
+  it('voice_assistant: api + telephony + systemd asterisk', () => {
+    const p = byName.voice_assistant
+    expect(p.workingDir).toBe('/opt/apps/voice_assistant/repo')
+    expect(p.containers).toEqual(['voice-assistant-api', 'voice-assistant-telephony'])
     expect(p.asterisk).toBe(true)
     expect(p.systemdUnits).toContain('asterisk')
     expect(p.httpChecks).toContainEqual(expect.objectContaining({ mode: 'local', host: '127.0.0.1', port: 8082 }))
-    expect(p.containerRoles['sesli-asistan-api']).toBe('backend')
-    expect(p.containerRoles['sesli-asistan-telephony']).toBe('asterisk')
+    expect(p.containerRoles['voice-assistant-api']).toBe('backend')
+    expect(p.containerRoles['voice-assistant-telephony']).toBe('asterisk')
   })
 
   it('backend: .NET api + postgres 17 + api-restaurant domain', () => {
@@ -33,17 +33,17 @@ describe('keşif → proje önerileri (VDS referansı)', () => {
     expect(p.postgres).toEqual({ container: 'backend-postgres-1', user: 'restaurant_app' })
     expect(p.containerRoles['backend-postgres-1']).toBe('db')
     const pub = p.httpChecks.filter((c) => c.mode === 'public').map((c) => c.url)
-    expect(pub).toEqual(['https://api-restaurant.yukselyazilim.com/'])
-    // Postgres portu (100.99.9.0:5432) için HTTP kontrolü önerilmez
+    expect(pub).toEqual(['https://api-restaurant.example.com/'])
+    // Postgres portu (100.64.0.10:5432) için HTTP kontrolü önerilmez
     expect(p.httpChecks.some((c) => c.port === 5432)).toBe(false)
   })
 
-  it('frontend: restaurant + tanitim domainleri', () => {
-    const p = byName['yukselyazilim.com-web']
-    expect(p.containers).toEqual(['yuksel-yazilim-frontend'])
-    expect(p.containerRoles['yuksel-yazilim-frontend']).toBe('frontend')
+  it('frontend: restaurant + www domainleri', () => {
+    const p = byName['example.com-web']
+    expect(p.containers).toEqual(['example-frontend'])
+    expect(p.containerRoles['example-frontend']).toBe('frontend')
     const pub = p.httpChecks.filter((c) => c.mode === 'public').map((c) => c.url)
-    expect(pub).toEqual(['https://restaurant.yukselyazilim.com/', 'https://tanitim.yukselyazilim.com/'])
+    expect(pub).toEqual(['https://restaurant.example.com/', 'https://www.example.com/'])
   })
 
   it('monitoring: prometheus, grafana (tailscale IP), exporter + node_exporter', () => {
@@ -52,7 +52,7 @@ describe('keşif → proje önerileri (VDS referansı)', () => {
     expect(p.systemdUnits).toContain('node_exporter')
     expect(p.postgres).toBeUndefined() // postgres-exporter bir DB değil
     expect(p.httpChecks).toContainEqual(expect.objectContaining({ host: '127.0.0.1', port: 9090, path: '/-/healthy' }))
-    expect(p.httpChecks).toContainEqual(expect.objectContaining({ host: '100.99.9.0', port: 3000, path: '/api/health' }))
+    expect(p.httpChecks).toContainEqual(expect.objectContaining({ host: '100.64.0.10', port: 3000, path: '/api/health' }))
   })
 
   it('toplam 3 public domain', () => {
@@ -72,7 +72,7 @@ describe('keşif → proje önerileri (VDS referansı)', () => {
 
 describe('yardımcılar', () => {
   it('proje adı: genel dizin adlarında üst dizine çıkar', () => {
-    expect(projectNameFrom('/opt/apps/sesli_asistan/repo', 'repo')).toBe('sesli_asistan')
+    expect(projectNameFrom('/opt/apps/voice_assistant/repo', 'repo')).toBe('voice_assistant')
     expect(projectNameFrom('/opt/monitoring/', 'monitoring')).toBe('monitoring')
     expect(projectNameFrom(undefined, 'x')).toBe('x')
   })

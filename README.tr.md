@@ -1,6 +1,10 @@
 # ServerPulse
 
-Sunucuları ve üzerindeki projeleri (Docker, systemd, .NET/TS backend'ler, PostgreSQL, Asterisk) VDS'e girmeden, kendi bilgisayarınızdan izleyen masaüstü uygulaması. Windows (x64) ve macOS (Apple Silicon) üzerinde çalışır.
+[English](README.md) · **Türkçe**
+
+Sunucuları ve üzerindeki projeleri (Docker, systemd, .NET/TS backend'ler, PostgreSQL, Asterisk) VDS'e girmeden, kendi bilgisayarınızdan izleyen masaüstü uygulaması. Windows (x64) ve macOS (Apple Silicon) üzerinde çalışır. Açık kaynaktır ([MIT](LICENSE)).
+
+![Sunucu ekranı](docs/screenshots/dashboard.png)
 
 **Agentless:** Sunucuya hiçbir şey kurulmaz. Uygulama SSH ile bağlanır, önceden tanımlı ve salt okunur komutları çalıştırır, çıktıyı kendi bilgisayarınızda parse eder. Sunucuda kalıcı süreç bırakılmaz; loglar yalnızca `--tail 200` / `-n 200` ile okunur, asla `-f` ile takip edilmez.
 
@@ -9,6 +13,16 @@ Sunucuları ve üzerindeki projeleri (Docker, systemd, .NET/TS backend'ler, Post
 - **Dashboard:** Sunucu/proje ağacı, proje kartları (Backend/Frontend/DB/Asterisk rozetleri, HTTP yanıt süresi ve uptime %, SSL kalan gün, container CPU/RAM), 1 saatten 30 güne kadar CPU/RAM/disk ve ağ trafiği grafikleri (yerel SQLite; isteğe bağlı Prometheus), süreç listesi, güvenlik sekmesi, loglar, `docker system df`, olay geçmişi.
 - **Alarmlar:** Durum değiştiğinde native bildirim gönderilir (debounce'lu). İsteğe bağlı olarak **Telegram** ve **webhook**'a da gider (Ayarlar → Harici bildirimler; token/URL işletim sistemi güvenli depolamasında şifreli saklanır).
 - **Dil:** Türkçe ve İngilizce (Ayarlar → Genel → Dil). Varsayılan "Sistem": işletim sistemi Türkçeyse Türkçe, değilse İngilizce. Dil desteğinden önce kurulmuş uygulamalar Türkçe kalır. Metinler `src/shared/i18n/` altındadır; yeni metin önce `tr.ts`'e, aynı anahtarla `en.ts`'e eklenir (eksik anahtar derleme hatası verir).
+
+| Proje ekranı | Güvenlik sekmesi |
+|---|---|
+| ![Proje ekranı](docs/screenshots/project.png) | ![Güvenlik sekmesi](docs/screenshots/security.png) |
+| **Koyu tema** | **Widget** |
+| ![Koyu tema](docs/screenshots/dashboard-dark.png) | ![Widget](docs/screenshots/widget.png) |
+
+## İndir
+
+Windows kurulumu (x64) [Releases](https://github.com/tanjavaner/serverpulse/releases/latest) sayfasındadır. Kurulu uygulama yeni sürümleri kendiliğinden indirir (Ayarlar → Güncellemeler). macOS paketi şimdilik bir Mac'te `npm run dist:mac` ile üretilir (aşağıda).
 
 ## Geliştirme
 
@@ -188,12 +202,24 @@ Ayarlar → Harici bildirimler → Telegram açıkken:
 
 ## Testler ve fixture'lar
 
-`tests/fixtures/` altındaki çıktılar gerçek komut biçimlerine ve plandaki VDS envanterine göre hazırlanmıştır. `tests/discovery.test.ts` keşfin bu VDS'te 4 projeyi, 8 container'ı ve 3 domain'i bulduğunu doğrular (kabul referansı).
+`tests/fixtures/` altındaki çıktılar gerçek komut biçimlerinde, anonimleştirilmiş örnek bir VDS envanteridir (alan adları `example.com`). `tests/discovery.test.ts` keşfin bu envanterde 4 projeyi, 8 container'ı ve 3 domain'i bulduğunu doğrular (kabul referansı). Testler gerçek `electron` paketini yüklemez; `vitest.config.ts` onu `tests/stubs/electron.ts`'e yönlendirir.
 
 Gerçek çıktılarla çalışmak için `scripts/capture-fixtures.sh` betiğini sunucuda çalıştırın (salt okunurdur, kullanım talimatı betiğin başında). Toplanan dosyaları `tests/fixtures/` altına kopyalayın. Bazı testler fixture'daki belirli değerleri (ör. "Rejected" trunk) kontrol eder; gerçek çıktıya geçince bu beklentileri güncelleyin.
 
-## Plandan bilinçli sapmalar
+## Tasarım notları
 
-- **better-sqlite3 yerine `node:sqlite`:** Electron 44 (Node 24) içinde yerleşik olarak geliyor. Native modül derlemesi ortadan kalktığı için Windows ve macOS paketlemesi basitleşiyor. API ve şema aynı işi görüyor.
-- **Container restart sayısı** 5 dakikalık `docker-meta` yerine 5 saniyelik docker collector'da (`docker inspect --format` ile tek satır) okunur. Böylece "restart artıyor" alarmı 5 dakika gecikmez.
+- **SQLite için `node:sqlite`:** better-sqlite3 gibi native bir modül yerine Electron 44 (Node 24) içinde yerleşik gelen `node:sqlite` kullanılır. Native derleme olmadığı için Windows ve macOS paketlemesi basitleşir.
+- **Container restart sayısı** 5 dakikalık `dockerMeta` yerine 5 saniyelik docker collector'da (`docker inspect --format` ile tek satır) okunur. Böylece "restart artıyor" alarmı 5 dakika gecikmez.
 - **Yönetim eylemleri** (container başlat/durdur/yeniden başlat, proje güncelleme, Docker temizliği, sunucu bakımı) varsayılan olarak kapalıdır. Ayarlar'dan açılabilir ve her seferinde main process'te native bir onay penceresi ister.
+
+## Katkı
+
+Hata bildirimleri ve pull request'ler memnuniyetle karşılanır. Göndermeden önce `npm run typecheck` ve `npm test` çalıştırın. Yeni sunucu komutları yalnızca `src/main/ssh/commands.ts`'e eklenir ve girdileri doğrulanır; çıktı ayrıştırma `src/main/parsers/` altında saf fonksiyon olarak yazılır ve fixture testi eklenir. Kullanıcıya görünen her metin iki dilde (`src/shared/i18n/`) olmalıdır.
+
+## Güvenlik
+
+Güvenlik açığı bildirimleri için [SECURITY.md](SECURITY.md)'ye bakın; lütfen herkese açık issue açmayın.
+
+## Lisans
+
+[MIT](LICENSE) © 2026 Yüksel Yazılım
