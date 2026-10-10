@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { t } from '@shared/i18n'
 import { buildSetupScript, normalizePubKey, SETUP_USER_RE } from '@shared/setup'
 import { api } from '../lib/api'
@@ -19,6 +19,8 @@ export function SetupCard({
   keySource: { privateKeyPath?: string; serverId?: string; passphrase?: string } | null
 }): ReactNode {
   const [opts, setOpts] = useState({ docker: true, journal: true, maint: false, asterisk })
+  // Asterisk seçeneği yalnızca formda Asterisk açıkken görünür; kapatılınca betikte gizli kural kalmasın
+  useEffect(() => setOpts((o) => ({ ...o, asterisk })), [asterisk])
   const [pubKey, setPubKey] = useState('')
   const [keyError, setKeyError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -52,7 +54,7 @@ export function SetupCard({
           <Toggle checked={opts.docker} onChange={set('docker')} label={t('setup.docker')} />
           <Toggle checked={opts.journal} onChange={set('journal')} label={t('setup.journal')} />
           <Toggle checked={opts.maint} onChange={set('maint')} label={t('setup.maint')} />
-          <Toggle checked={opts.asterisk} onChange={set('asterisk')} label={t('setup.asterisk')} />
+          {asterisk ? <Toggle checked={opts.asterisk} onChange={set('asterisk')} label={t('setup.asterisk')} /> : null}
         </div>
         <Alert kind="warn">{t('setup.rootNote')}</Alert>
 

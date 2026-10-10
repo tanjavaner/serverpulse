@@ -2,16 +2,17 @@
 
 [English](README.md) · **Türkçe**
 
-Sunucuları ve üzerindeki projeleri (Docker, systemd, .NET/TS backend'ler, PostgreSQL, Asterisk) VDS'e girmeden, kendi bilgisayarınızdan izleyen masaüstü uygulaması. Windows (x64) ve macOS (Apple Silicon) üzerinde çalışır. Açık kaynaktır ([MIT](LICENSE)).
+Sunucuları ve üzerindeki projeleri (Docker container'ları, systemd servisleri, HTTP endpoint'leri, PostgreSQL) VDS'e girmeden, kendi bilgisayarınızdan izleyen masaüstü uygulaması. Windows (x64) ve macOS (Apple Silicon) üzerinde çalışır. Açık kaynaktır ([MIT](LICENSE)).
 
 ![Sunucu ekranı](docs/screenshots/dashboard.png)
 
 **Agentless:** Sunucuya hiçbir şey kurulmaz. Uygulama SSH ile bağlanır, önceden tanımlı ve salt okunur komutları çalıştırır, çıktıyı kendi bilgisayarınızda parse eder. Sunucuda kalıcı süreç bırakılmaz; loglar yalnızca `--tail 200` / `-n 200` ile okunur, asla `-f` ile takip edilmez.
 
-- **Widget (sağ alt):** Her sunucu için durum, CPU/RAM/Disk çubukları, "8/8 container sağlıklı", aktif çağrı sayısı ve açık sorunlar. Kırmızı durumlar en üstte gösterilir. Tıklanınca dashboard açılır.
+- **Widget (sağ alt):** Her sunucu için durum, CPU/RAM/Disk çubukları, "8/8 container sağlıklı" ve açık sorunlar (Asterisk açıksa aktif çağrı sayısı da). Kırmızı durumlar en üstte gösterilir. Tıklanınca dashboard açılır.
 - **Tray / menü çubuğu:** İkon rengi en kötü duruma göre değişir (yeşil, sarı, kırmızı, gri). Tıklayınca widget açılır/kapanır, sağ tık menüsünde Dashboard, Yenile ve Çıkış bulunur.
 - **Dashboard:** Sunucu/proje ağacı, proje kartları (Backend/Frontend/DB/Asterisk rozetleri, HTTP yanıt süresi ve uptime %, SSL kalan gün, container CPU/RAM), 1 saatten 30 güne kadar CPU/RAM/disk ve ağ trafiği grafikleri (yerel SQLite; isteğe bağlı Prometheus), süreç listesi, güvenlik sekmesi, loglar, `docker system df`, olay geçmişi.
 - **Alarmlar:** Durum değiştiğinde native bildirim gönderilir (debounce'lu). İsteğe bağlı olarak **Telegram** ve **webhook**'a da gider (Ayarlar → Harici bildirimler; token/URL işletim sistemi güvenli depolamasında şifreli saklanır).
+- **İsteğe bağlı entegrasyonlar:** VoIP sunucuları için **Asterisk** (aktif çağrı, SIP trunk kaydı ve endpoint'ler; trunk düşünce alarm) ve uzun dönem grafikler için alternatif kaynak olarak **Prometheus**. İkisi de varsayılan olarak kapalıdır ve sunucu formundaki "İsteğe bağlı entegrasyonlar" bölümündedir; keşif Asterisk'i yalnızca sunucuda çalışan bir `asterisk` servisi bulursa kendiliğinden açar.
 - **Dil:** Türkçe ve İngilizce (Ayarlar → Genel → Dil). Varsayılan "Sistem": işletim sistemi Türkçeyse Türkçe, değilse İngilizce. Dil desteğinden önce kurulmuş uygulamalar Türkçe kalır. Metinler `src/shared/i18n/` altındadır; yeni metin önce `tr.ts`'e, aynı anahtarla `en.ts`'e eklenir (eksik anahtar derleme hatası verir).
 
 | Proje ekranı | Güvenlik sekmesi |

@@ -33,6 +33,11 @@ export function ServerForm({ server, nav }: { snap: AppSnapshot; server?: Server
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [sshHosts, setSshHosts] = useState<SshConfigHost[]>([])
+  // İsteğe bağlı entegrasyonlar (Asterisk, Prometheus) kullanılıyorsa ya da test sunucuda Asterisk bulduysa açık
+  const [integrationsOpen, setIntegrationsOpen] = useState(!!(server?.asterisk || server?.prometheus))
+  useEffect(() => {
+    if (test?.ok && (test.asteriskAccess === 'ok' || test.asteriskAccess === 'no-sudo')) setIntegrationsOpen(true)
+  }, [test])
   useEffect(() => {
     if (!server) void api.invoke('server:sshConfigHosts').then(setSshHosts)
   }, [server])
@@ -260,14 +265,14 @@ export function ServerForm({ server, nav }: { snap: AppSnapshot; server?: Server
         <Field label={t('sf.serverUnits')} hint={t('sf.serverUnitsHint')}>
           <input value={unitsText} onChange={(e) => setUnitsText(e.target.value)} placeholder="nginx, docker, fail2ban, tailscaled" />
         </Field>
-        <Toggle
-          checked={!!f.asterisk}
-          onChange={(v) => set('asterisk', v)}
-          label={t('sf.asterisk')}
-          hint={t('sf.asteriskHint')}
-        />
-        <Toggle checked={!!f.prometheus} onChange={(v) => set('prometheus', v)} label={t('sf.prometheus')} hint={t('sf.prometheusHint')} />
         <Toggle checked={f.enabled !== false} onChange={(v) => set('enabled', v)} label={t('sf.enabled')} />
+        <details open={integrationsOpen} onToggle={(e) => setIntegrationsOpen(e.currentTarget.open)}>
+          <summary className="cursor-pointer text-[13px] text-ink-2">{t('sf.integrations')}</summary>
+          <div className="mt-2 flex flex-col gap-3">
+            <Toggle checked={!!f.asterisk} onChange={(v) => set('asterisk', v)} label={t('sf.asterisk')} hint={t('sf.asteriskHint')} />
+            <Toggle checked={!!f.prometheus} onChange={(v) => set('prometheus', v)} label={t('sf.prometheus')} hint={t('sf.prometheusHint')} />
+          </div>
+        </details>
       </Card>
 
       <Card className="flex flex-col gap-3">
@@ -328,7 +333,7 @@ export function ServerForm({ server, nav }: { snap: AppSnapshot; server?: Server
 
 function TestView({ r }: { r: TestResult }): ReactNode {
   if (!r.ok) return <Alert kind="error">{t('sf.testFailed', { e: r.error })}</Alert>
-  const ast = { ok: t('sf.astOk'), 'no-sudo': t('sf.astNoSudo'), 'not-installed': t('sf.astNotInstalled'), unknown: t('common.unknown') }
+  const ast = { ok: t('sf.astOk'), 'no-sudo': t('sf.astNoSudo') }
   return (
     <div className="flex flex-col gap-2">
       <Alert kind="ok">
@@ -336,7 +341,9 @@ function TestView({ r }: { r: TestResult }): ReactNode {
         <div className="font-mono text-[11px] break-all text-ink-2">{r.uname}</div>
         <div className="font-mono text-[11px] break-all text-ink-2">{r.id}</div>
         <div className="mt-1 text-[12px]">
-          Docker: {r.dockerAccess ? t('sf.dockerAccess', { v: r.dockerVersion }) : t('sf.noAccess')} · Asterisk CLI: {ast[r.asteriskAccess]}
+          Docker: {r.dockerAccess ? t('sf.dockerAccess', { v: r.dockerVersion }) : t('sf.noAccess')}
+          {/* Asterisk yalnızca sunucuda kuruluysa anılır */}
+          {r.asteriskAccess === 'ok' || r.asteriskAccess === 'no-sudo' ? ` · Asterisk CLI: ${ast[r.asteriskAccess]}` : null}
         </div>
       </Alert>
       {r.warnings.map((w) => (

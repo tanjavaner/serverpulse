@@ -219,7 +219,8 @@ export function Discovery({ snap, server, nav }: { snap: AppSnapshot; server: Se
                 </label>
               ))}
             </div>
-            <Toggle checked={asterisk} onChange={setAsterisk} label={t('disc.asteriskToggle')} />
+            {/* Yalnızca Asterisk zaten açıksa ya da keşif çalışan bir asterisk servisi bulduysa */}
+            {server.asterisk || proposals.some((p) => p.asterisk) ? <Toggle checked={asterisk} onChange={setAsterisk} label={t('disc.asteriskToggle')} /> : null}
           </Card>
 
           {existing.length ? (

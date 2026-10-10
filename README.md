@@ -2,16 +2,17 @@
 
 **English** · [Türkçe](README.tr.md)
 
-A desktop app that monitors your servers and the projects running on them (Docker, systemd, .NET/TS backends, PostgreSQL, Asterisk) from your own computer, without logging into the VPS. Runs on Windows (x64) and macOS (Apple Silicon). Open source under the [MIT license](LICENSE).
+A desktop app that monitors your servers and the projects running on them (Docker containers, systemd services, HTTP endpoints, PostgreSQL) from your own computer, without logging into the VPS. Runs on Windows (x64) and macOS (Apple Silicon). Open source under the [MIT license](LICENSE).
 
 ![Server view](docs/screenshots/dashboard.png)
 
 **Agentless:** nothing is installed on the server. The app connects over SSH, runs a fixed set of read-only commands and parses the output on your computer. No long-running process is left on the server; logs are only read with `--tail 200` / `-n 200`, never followed with `-f`.
 
-- **Widget (bottom right):** status, CPU/RAM/disk bars, "8/8 containers healthy", active calls and open issues for each server. Red states are shown first. Click to open the dashboard.
+- **Widget (bottom right):** status, CPU/RAM/disk bars, "8/8 containers healthy" and open issues for each server (plus active calls with Asterisk). Red states are shown first. Click to open the dashboard.
 - **Tray / menu bar:** the icon color follows the worst state (green, yellow, red, grey). Click to toggle the widget; the context menu has Dashboard, Refresh and Quit.
 - **Dashboard:** server/project tree, project cards (Backend/Frontend/DB/Asterisk badges, HTTP response time and uptime %, days until SSL expiry, container CPU/RAM), CPU/RAM/disk and network charts from 1 hour to 30 days (local SQLite; Prometheus optional), process list, security tab, logs, `docker system df`, event history.
 - **Alerts:** native notifications on state changes (debounced). Optionally also sent to **Telegram** and a **webhook** (Settings → External notifications; tokens/URLs are encrypted in the OS secure storage).
+- **Optional integrations:** **Asterisk** for VoIP servers (active calls, SIP trunk registration and endpoints, with an alert when a trunk drops) and **Prometheus** as an alternative source for long-term charts. Both are off by default and live under "Optional integrations" in the server form; discovery turns Asterisk on by itself only when it finds a running `asterisk` service.
 - **Language:** English and Turkish (Settings → General → Language). The default "System" picks Turkish on a Turkish OS and English otherwise. Strings live in `src/shared/i18n/`; a new string goes into `tr.ts` first and into `en.ts` under the same key (a missing key is a compile error).
 
 | Project view | Security tab |

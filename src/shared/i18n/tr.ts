@@ -286,6 +286,7 @@ export const tr = {
   'sf.verifyOnServer': 'Sunucuda kontrol:',
   'sf.confirmFp': 'Parmak izini onayla ve devam et',
   'sf.monitoring': 'İzleme',
+  'sf.integrations': 'İsteğe bağlı entegrasyonlar (Asterisk, Prometheus)',
   'sf.serverUnits': 'Sunucu seviyesinde systemd servisleri',
   'sf.serverUnitsHint': 'Virgülle ayırın. Keşif sırasında otomatik önerilir.',
   'sf.asterisk': 'Asterisk CLI okumaları',
@@ -308,7 +309,6 @@ export const tr = {
   'sf.noAccess': 'erişim yok',
   'sf.astOk': 'erişim var',
   'sf.astNoSudo': 'sudoers kuralı yok',
-  'sf.astNotInstalled': 'kurulu değil',
 
   // --------------------------------------------------------------- bakım ekranı
   'maint.step.status': 'Durum kontrolü',
@@ -617,7 +617,7 @@ export const tr = {
   'setup.intro':
     'Sunucuda izleme kullanıcısı yoksa bu betik onu oluşturur, gerekli gruplara ekler ve anahtarınızı yetkilendirir. Sunucuya root ya da sudo yetkili bir kullanıcıyla bağlanıp bloğun tamamını yapıştırın. Tekrar çalıştırmak güvenlidir.',
   'setup.docker': "docker grubuna ekle (container'ları okumak için)",
-  'setup.journal': 'systemd-journal grubuna ekle (servis logları için)',
+  'setup.journal': 'systemd-journal grubuna ekle (servis logları ve başarısız SSH girişleri için)',
   'setup.maint': 'Bakım için şifresiz sudo: apt-get ve reboot',
   'setup.asterisk': 'Asterisk okumaları için şifresiz sudo (3 salt okunur komut)',
   'setup.rootNote':

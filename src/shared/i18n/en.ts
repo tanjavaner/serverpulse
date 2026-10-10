@@ -285,6 +285,7 @@ export const en: Messages = {
   'sf.verifyOnServer': 'Check on the server:',
   'sf.confirmFp': 'Confirm fingerprint and continue',
   'sf.monitoring': 'Monitoring',
+  'sf.integrations': 'Optional integrations (Asterisk, Prometheus)',
   'sf.serverUnits': 'Server-level systemd services',
   'sf.serverUnitsHint': 'Comma separated. Suggested automatically during discovery.',
   'sf.asterisk': 'Asterisk CLI readings',
@@ -307,7 +308,6 @@ export const en: Messages = {
   'sf.noAccess': 'no access',
   'sf.astOk': 'accessible',
   'sf.astNoSudo': 'no sudoers rule',
-  'sf.astNotInstalled': 'not installed',
 
   // --------------------------------------------------------------- maintenance view
   'maint.step.status': 'Status check',
@@ -615,7 +615,7 @@ export const en: Messages = {
   'setup.intro':
     'If the server has no monitoring user yet, this script creates it, adds it to the required groups and authorizes your key. Connect to the server as root or a sudo-capable user and paste the whole block. Re-running it is safe.',
   'setup.docker': 'Add to the docker group (to read containers)',
-  'setup.journal': 'Add to the systemd-journal group (for service logs)',
+  'setup.journal': 'Add to the systemd-journal group (for service logs and failed SSH logins)',
   'setup.maint': 'Passwordless sudo for maintenance: apt-get and reboot',
   'setup.asterisk': 'Passwordless sudo for Asterisk readings (3 read-only commands)',
   'setup.rootNote':
