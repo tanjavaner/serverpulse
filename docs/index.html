@@ -75,7 +75,7 @@ footer { border-top: 1px solid var(--line); padding-block: 28px; color: var(--in
     <h1><span data-i18n="h1a">Sunucularınızı</span> <span class="acc" data-i18n="h1b">VDS'e girmeden</span> <span data-i18n="h1c">izleyin</span></h1>
     <p class="lead" data-i18n="lead">Sunucuları ve üzerindeki projeleri (Docker, systemd, HTTP endpoint'leri, PostgreSQL) kendi bilgisayarınızdan izleyen masaüstü uygulaması. Sunucuya hiçbir şey kurulmaz. Açık kaynak, MIT lisanslı.</p>
     <div class="cta">
-      <a class="btn primary" href="https://github.com/tanjavaner/serverpulse/releases/latest" data-i18n="ctaDownload">Windows için indir</a>
+      <a class="btn primary js-download" href="https://github.com/tanjavaner/serverpulse/releases/latest" data-i18n="ctaDownload">Windows için indir</a>
       <a class="btn" href="https://github.com/tanjavaner/serverpulse" data-i18n="ctaRepo">GitHub'da incele</a>
     </div>
     <img class="shot" data-shot="dashboard.png" src="screenshots/tr/dashboard.png" alt="ServerPulse dashboard" width="1280" height="860">
@@ -113,7 +113,7 @@ footer { border-top: 1px solid var(--line); padding-block: 28px; color: var(--in
     <h2 data-i18n="dlTitle">İndir ve başla</h2>
     <p class="sub" data-i18n="dlSub">Windows kurulum dosyası Releases sayfasında. Kurulu sürüm yeni sürümleri kendisi indirir.</p>
     <div class="cta" style="justify-content:flex-start">
-      <a class="btn primary" href="https://github.com/tanjavaner/serverpulse/releases/latest" data-i18n="ctaDownload">Windows için indir</a>
+      <a class="btn primary js-download" href="https://github.com/tanjavaner/serverpulse/releases/latest" data-i18n="ctaDownload">Windows için indir</a>
       <a class="btn" href="https://github.com/tanjavaner/serverpulse#packaging" data-i18n="dlMac">macOS için derle</a>
     </div>
     <p class="sub" data-i18n="dlNote">İmzasız olduğu için Windows SmartScreen uyarı verebilir: "Ek bilgi" → "Yine de çalıştır". macOS'ta ilk açılışta sağ tık → Aç.</p>
@@ -193,6 +193,17 @@ setLang(initial);
 document.getElementById("lang").addEventListener("click", function () {
   setLang(document.documentElement.lang === "tr" ? "en" : "tr");
 });
+
+// Windows .exe dosya adında sürüm var; son release'ten bulup butonları doğrudan indirmeye bağlar.
+fetch("https://api.github.com/repos/tanjavaner/serverpulse/releases/latest")
+  .then(function (r) { return r.ok ? r.json() : null; })
+  .then(function (rel) {
+    if (!rel || !rel.assets) return;
+    var exe = rel.assets.filter(function (a) { return /-Setup-.*\.exe$/.test(a.name); })[0];
+    if (!exe) return;
+    document.querySelectorAll(".js-download").forEach(function (a) { a.href = exe.browser_download_url; });
+  })
+  .catch(function () {});
 </script>
 </body>
 </html>
