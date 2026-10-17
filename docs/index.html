@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ServerPulse — VDS'e girmeden sunucu izleme</title>
+<meta name="description" content="Sunucularınızı ve üzerindeki projeleri (Docker, systemd, HTTP, PostgreSQL) kendi bilgisayarınızdan izleyen, agentless, açık kaynak masaüstü uygulaması.">
+<link rel="icon" href="assets/icon.png">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ServerPulse">
+<meta property="og:title" content="ServerPulse — VDS'e girmeden sunucu izleme">
+<meta property="og:description" content="Agentless, açık kaynak masaüstü uygulaması: Docker, systemd, HTTP ve PostgreSQL durumunu SSH üzerinden, sunucuya hiçbir şey kurmadan izleyin.">
+<meta property="og:url" content="https://tanjavaner.github.io/serverpulse/">
+<meta property="og:image" content="https://tanjavaner.github.io/serverpulse/assets/social-tr.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta name="twitter:card" content="summary_large_image">
+
+<style>
+:root {
+  --bg: #0c1222; --bg2: #16203a; --ink: #f4f6fb; --ink2: #aab3c8;
+  --green: #22c55e; --blue: #3987e5; --line: rgba(255,255,255,.12); --card: rgba(255,255,255,.05);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+a { color: var(--blue); }
+.wrap { max-width: 1040px; margin: 0 auto; padding-inline: 20px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 20px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 18px; }
+.brand img { width: 32px; height: 32px; border-radius: 8px; }
+nav { display: flex; align-items: center; gap: 16px; font-size: 14px; }
+nav a { color: var(--ink2); text-decoration: none; }
+nav a:hover { color: var(--ink); }
+.lang { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 4px 12px; font: inherit; cursor: pointer; }
+.hero { background: linear-gradient(180deg, var(--bg2), var(--bg)); border-bottom: 1px solid var(--line); }
+.hero .wrap { padding-block: 40px 56px; text-align: center; }
+h1 { font-size: clamp(30px, 6vw, 52px); line-height: 1.15; margin: 0 0 16px; }
+h1 .acc { color: var(--green); }
+.lead { max-width: 680px; margin: 0 auto 28px; color: var(--ink2); font-size: clamp(16px, 2.4vw, 19px); }
+.cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 36px; }
+.btn { display: inline-block; padding: 12px 22px; border-radius: 10px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); color: var(--ink); background: var(--card); }
+.btn.primary { background: var(--green); border-color: var(--green); color: #052e14; }
+.shot { width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+section { padding-block: 56px; }
+h2 { font-size: clamp(24px, 4vw, 32px); margin: 0 0 8px; }
+.sub { color: var(--ink2); margin: 0 0 28px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.card { border: 1px solid var(--line); background: var(--card); border-radius: 14px; padding: 20px; }
+.card h3 { margin: 0 0 6px; font-size: 17px; }
+.card p { margin: 0; color: var(--ink2); font-size: 15px; }
+.shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.shots figure { margin: 0; }
+.shots figcaption { color: var(--ink2); font-size: 14px; margin-top: 8px; text-align: center; }
+.widget { max-width: 340px; margin: 0 auto; display: block; }
+pre { background: #070b16; border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; overflow-x: auto; color: #9fe8b6; font: 14px/1.7 Consolas, "Cascadia Mono", monospace; margin: 0; }
+footer { border-top: 1px solid var(--line); padding-block: 28px; color: var(--ink2); font-size: 14px; text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="wrap">
+    <header>
+      <div class="brand"><img src="assets/icon.png" alt="" width="32" height="32">ServerPulse</div>
+      <nav>
+        <a href="#features" data-i18n="navFeatures">Özellikler</a>
+        <a href="#download" data-i18n="navDownload">İndir</a>
+        <a href="https://github.com/tanjavaner/serverpulse">GitHub</a>
+        <button class="lang" id="lang" type="button" aria-label="Language">EN</button>
+      </nav>
+    </header>
+
+    <h1><span data-i18n="h1a">Sunucularınızı</span> <span class="acc" data-i18n="h1b">VDS'e girmeden</span> <span data-i18n="h1c">izleyin</span></h1>
+    <p class="lead" data-i18n="lead">Sunucuları ve üzerindeki projeleri (Docker, systemd, HTTP endpoint'leri, PostgreSQL) kendi bilgisayarınızdan izleyen masaüstü uygulaması. Sunucuya hiçbir şey kurulmaz. Açık kaynak, MIT lisanslı.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/tanjavaner/serverpulse/releases/latest" data-i18n="ctaDownload">Windows için indir</a>
+      <a class="btn" href="https://github.com/tanjavaner/serverpulse" data-i18n="ctaRepo">GitHub'da incele</a>
+    </div>
+    <img class="shot" data-shot="dashboard.png" src="screenshots/tr/dashboard.png" alt="ServerPulse dashboard" width="1280" height="860">
+  </div>
+</div>
+
+<main class="wrap">
+  <section id="features">
+    <h2 data-i18n="featTitle">Neler yapıyor?</h2>
+    <p class="sub" data-i18n="featSub">SSH ile bağlanır, salt okunur komutları çalıştırır, çıktıyı bilgisayarınızda işler.</p>
+    <div class="grid">
+      <div class="card"><h3 data-i18n="f1t">Agentless</h3><p data-i18n="f1d">Sunucuda kalıcı süreç yok. Loglar yalnızca son 200 satır okunur, asla takip edilmez.</p></div>
+      <div class="card"><h3 data-i18n="f2t">Widget ve tray</h3><p data-i18n="f2d">Sağ altta CPU/RAM/disk ve "8/8 container sağlıklı" özeti. Tray ikonu en kötü duruma göre renk değiştirir.</p></div>
+      <div class="card"><h3 data-i18n="f3t">Proje kartları</h3><p data-i18n="f3d">Backend, Frontend, DB rozetleri, HTTP yanıt süresi, uptime, SSL bitişine kalan gün, container kaynak kullanımı.</p></div>
+      <div class="card"><h3 data-i18n="f4t">Grafikler</h3><p data-i18n="f4d">CPU, RAM, disk ve ağ grafikleri 1 saatten 30 güne kadar. Yerel SQLite, isteğe bağlı Prometheus.</p></div>
+      <div class="card"><h3 data-i18n="f5t">Uyarılar</h3><p data-i18n="f5d">Durum değişince masaüstü bildirimi. İsterseniz Telegram ve webhook'a da gider.</p></div>
+      <div class="card"><h3 data-i18n="f6t">Güvenlik sekmesi</h3><p data-i18n="f6d">Başarısız SSH girişleri ve servis logları tek yerde.</p></div>
+      <div class="card"><h3 data-i18n="f7t">Asterisk (isteğe bağlı)</h3><p data-i18n="f7d">VoIP sunucuları için aktif çağrılar ve SIP trunk durumu; trunk düşünce uyarı.</p></div>
+      <div class="card"><h3 data-i18n="f8t">Türkçe ve İngilizce</h3><p data-i18n="f8d">Açık ve koyu tema. Windows (x64) ve macOS (Apple Silicon).</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 data-i18n="shotsTitle">Ekran görüntüleri</h2>
+    <p class="sub" data-i18n="shotsSub">Proje görünümü, güvenlik sekmesi, koyu tema ve widget.</p>
+    <div class="shots">
+      <figure><img class="shot" data-shot="project.png" src="screenshots/tr/project.png" alt="" loading="lazy" width="1280" height="860"><figcaption data-i18n="s1">Proje görünümü</figcaption></figure>
+      <figure><img class="shot" data-shot="security.png" src="screenshots/tr/security.png" alt="" loading="lazy" width="1280" height="860"><figcaption data-i18n="s2">Güvenlik sekmesi</figcaption></figure>
+      <figure><img class="shot" data-shot="dashboard-dark.png" src="screenshots/tr/dashboard-dark.png" alt="" loading="lazy" width="1280" height="860"><figcaption data-i18n="s3">Koyu tema</figcaption></figure>
+      <figure><img class="shot widget" data-shot="widget.png" src="screenshots/tr/widget.png" alt="" loading="lazy" width="340" height="193"><figcaption data-i18n="s4">Widget</figcaption></figure>
+    </div>
+  </section>
+
+  <section id="download">
+    <h2 data-i18n="dlTitle">İndir ve başla</h2>
+    <p class="sub" data-i18n="dlSub">Windows kurulum dosyası Releases sayfasında. Kurulu sürüm yeni sürümleri kendisi indirir.</p>
+    <div class="cta" style="justify-content:flex-start">
+      <a class="btn primary" href="https://github.com/tanjavaner/serverpulse/releases/latest" data-i18n="ctaDownload">Windows için indir</a>
+      <a class="btn" href="https://github.com/tanjavaner/serverpulse#packaging" data-i18n="dlMac">macOS için derle</a>
+    </div>
+    <p class="sub" data-i18n="dlNote">İmzasız olduğu için Windows SmartScreen uyarı verebilir: "Ek bilgi" → "Yine de çalıştır". macOS'ta ilk açılışta sağ tık → Aç.</p>
+    <pre>git clone https://github.com/tanjavaner/serverpulse
+cd serverpulse
+npm install
+npm run dev</pre>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">MIT License · <a href="https://github.com/tanjavaner/serverpulse">github.com/tanjavaner/serverpulse</a></div>
+</footer>
+
+<script>
+var T = {
+  tr: {
+    title: "ServerPulse — VDS'e girmeden sunucu izleme",
+    navFeatures: "Özellikler", navDownload: "İndir",
+    h1a: "Sunucularınızı", h1b: "VDS'e girmeden", h1c: "izleyin",
+    lead: "Sunucuları ve üzerindeki projeleri (Docker, systemd, HTTP endpoint'leri, PostgreSQL) kendi bilgisayarınızdan izleyen masaüstü uygulaması. Sunucuya hiçbir şey kurulmaz. Açık kaynak, MIT lisanslı.",
+    ctaDownload: "Windows için indir", ctaRepo: "GitHub'da incele",
+    featTitle: "Neler yapıyor?", featSub: "SSH ile bağlanır, salt okunur komutları çalıştırır, çıktıyı bilgisayarınızda işler.",
+    f1t: "Agentless", f1d: "Sunucuda kalıcı süreç yok. Loglar yalnızca son 200 satır okunur, asla takip edilmez.",
+    f2t: "Widget ve tray", f2d: "Sağ altta CPU/RAM/disk ve \"8/8 container sağlıklı\" özeti. Tray ikonu en kötü duruma göre renk değiştirir.",
+    f3t: "Proje kartları", f3d: "Backend, Frontend, DB rozetleri, HTTP yanıt süresi, uptime, SSL bitişine kalan gün, container kaynak kullanımı.",
+    f4t: "Grafikler", f4d: "CPU, RAM, disk ve ağ grafikleri 1 saatten 30 güne kadar. Yerel SQLite, isteğe bağlı Prometheus.",
+    f5t: "Uyarılar", f5d: "Durum değişince masaüstü bildirimi. İsterseniz Telegram ve webhook'a da gider.",
+    f6t: "Güvenlik sekmesi", f6d: "Başarısız SSH girişleri ve servis logları tek yerde.",
+    f7t: "Asterisk (isteğe bağlı)", f7d: "VoIP sunucuları için aktif çağrılar ve SIP trunk durumu; trunk düşünce uyarı.",
+    f8t: "Türkçe ve İngilizce", f8d: "Açık ve koyu tema. Windows (x64) ve macOS (Apple Silicon).",
+    shotsTitle: "Ekran görüntüleri", shotsSub: "Proje görünümü, güvenlik sekmesi, koyu tema ve widget.",
+    s1: "Proje görünümü", s2: "Güvenlik sekmesi", s3: "Koyu tema", s4: "Widget",
+    dlTitle: "İndir ve başla", dlSub: "Windows kurulum dosyası Releases sayfasında. Kurulu sürüm yeni sürümleri kendisi indirir.",
+    dlMac: "macOS için derle",
+    dlNote: "İmzasız olduğu için Windows SmartScreen uyarı verebilir: \"Ek bilgi\" → \"Yine de çalıştır\". macOS'ta ilk açılışta sağ tık → Aç."
+  },
+  en: {
+    title: "ServerPulse — monitor your servers without logging in",
+    navFeatures: "Features", navDownload: "Download",
+    h1a: "Monitor your servers", h1b: "without logging in", h1c: "to the VPS",
+    lead: "A desktop app that monitors your servers and their projects (Docker, systemd, HTTP endpoints, PostgreSQL) from your own computer. Nothing is installed on the server. Open source, MIT licensed.",
+    ctaDownload: "Download for Windows", ctaRepo: "View on GitHub",
+    featTitle: "What does it do?", featSub: "It connects over SSH, runs read-only commands and parses the output on your computer.",
+    f1t: "Agentless", f1d: "No long-running process on the server. Logs are only read with a 200-line tail, never followed.",
+    f2t: "Widget and tray", f2d: "A bottom-right summary of CPU/RAM/disk and \"8/8 containers healthy\". The tray icon follows the worst state.",
+    f3t: "Project cards", f3d: "Backend, Frontend, DB badges, HTTP response time, uptime, days until SSL expiry, container resource usage.",
+    f4t: "Charts", f4d: "CPU, RAM, disk and network charts from 1 hour to 30 days. Local SQLite, optional Prometheus.",
+    f5t: "Alerts", f5d: "Desktop notifications on state changes, optionally sent to Telegram and a webhook too.",
+    f6t: "Security tab", f6d: "Failed SSH logins and service logs in one place.",
+    f7t: "Asterisk (optional)", f7d: "Active calls and SIP trunk status for VoIP servers, with an alert when a trunk drops.",
+    f8t: "English and Turkish", f8d: "Light and dark theme. Windows (x64) and macOS (Apple Silicon).",
+    shotsTitle: "Screenshots", shotsSub: "Project view, security tab, dark theme and widget.",
+    s1: "Project view", s2: "Security tab", s3: "Dark theme", s4: "Widget",
+    dlTitle: "Download and start", dlSub: "The Windows installer is on the Releases page. Installed copies download new versions by themselves.",
+    dlMac: "Build for macOS",
+    dlNote: "Because it is unsigned, Windows SmartScreen may warn: \"More info\" → \"Run anyway\". On macOS, right-click → Open the first time."
+  }
+};
+
+function setLang(l) {
+  var t = T[l];
+  document.documentElement.lang = l;
+  document.title = t.title;
+  document.querySelectorAll("[data-i18n]").forEach(function (el) { el.textContent = t[el.dataset.i18n]; });
+  document.querySelectorAll("[data-shot]").forEach(function (img) {
+    img.src = "screenshots/" + (l === "tr" ? "tr/" : "") + img.dataset.shot;
+  });
+  document.getElementById("lang").textContent = l === "tr" ? "EN" : "TR";
+  try { localStorage.setItem("lang", l); } catch (e) {}
+}
+
+var saved = null;
+try { saved = localStorage.getItem("lang"); } catch (e) {}
+var initial = saved || ((navigator.language || "").toLowerCase().indexOf("tr") === 0 ? "tr" : "en");
+setLang(initial);
+document.getElementById("lang").addEventListener("click", function () {
+  setLang(document.documentElement.lang === "tr" ? "en" : "tr");
+});
+</script>
+</body>
+</html>
