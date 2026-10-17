@@ -21,6 +21,7 @@
     "icons": "node scripts/gen-icon.mjs",
     "dist:win": "npm run build && electron-builder --win --x64 --publish never",
     "dist:mac": "npm run build && electron-builder --mac --arm64 --publish never",
+    "promo": "electron promo/render.cjs",
     "release": "npm version patch && git push --follow-tags"
   },
   "dependencies": {

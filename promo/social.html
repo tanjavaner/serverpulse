@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ServerPulse social preview</title>
+<link rel="stylesheet" href="promo.css">
+<style>
+  body { width: 1280px; height: 640px; overflow: hidden; }
+  .card { width: 1280px; height: 640px; padding: 60px 40px 60px 72px; display: flex; align-items: center; gap: 36px; position: relative; overflow: hidden; background: linear-gradient(135deg, var(--bg1), var(--bg2)); }
+  .card::before { content: ''; position: absolute; width: 640px; height: 640px; left: -200px; bottom: -300px; background: radial-gradient(circle, rgba(34, 197, 94, 0.22), transparent 65%); }
+  .left { width: 560px; flex: none; display: flex; flex-direction: column; gap: 22px; position: relative; }
+  .left img { width: 96px; height: 96px; }
+  .left h1 { font-size: 72px; }
+  .left .sub { font-size: 29px; }
+  .left .chip { font-size: 18px; padding: 6px 12px; }
+  .left .foot { justify-content: flex-start; font-size: 22px; }
+  .right { flex: 1; position: relative; height: 460px; }
+  .right .win { width: 700px; position: absolute; left: 0; top: 0; }
+  .right .shot { height: 420px; overflow: hidden; }
+  .right img { width: 100%; }
+</style>
+</head>
+<body>
+<script src="content.js"></script>
+<script>
+const lang = new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'tr'
+const S = window.CONTENT.social[lang]
+const dir = lang === 'tr' ? '../docs/screenshots/tr/' : '../docs/screenshots/'
+document.body.innerHTML = `<div class="card"><div class="left"><img src="../docs/assets/icon.png"><h1>${S.title}</h1><div class="sub">${S.sub}</div><div class="chips">${S.chips.map((c) => `<span class="chip">${c}</span>`).join('')}</div><div class="foot"><b>${S.foot}</b></div></div><div class="right"><div class="win"><div class="bar"><i></i><i></i><i></i></div><div class="shot"><img src="${dir}dashboard-dark.png"></div></div></div></div>`
+</script>
+</body>
+</html>

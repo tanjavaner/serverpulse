@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ServerPulse carousel</title>
+<link rel="stylesheet" href="promo.css">
+<style>@page { size: 1080px 1350px; margin: 0 } body { width: 1080px }</style>
+</head>
+<body>
+<script src="content.js"></script>
+<script>
+const lang = new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'tr'
+const C = window.CONTENT[lang]
+const shotDir = lang === 'tr' ? '../docs/screenshots/tr/' : '../docs/screenshots/'
+const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+const total = C.slides.length
+const win = (file, h) => `<div class="win crop"><div class="bar"><i></i><i></i><i></i></div><div class="shot" style="height:${h}px"><img src="${shotDir}${file}" style="height:${h}px"></div></div>`
+
+const body = {
+  cover: (s) => `<div class="grow"><h1>${esc(s.title)}<span class="acc">${esc(s.accent)}</span></h1><div class="sub">${esc(s.sub)}</div></div>${win(s.shot, 623)}`,
+  problem: (s) => `<h2>${esc(s.title)}</h2><div class="term">${s.lines.map((l) => `<span>$</span> ${esc(l)}`).join('<br>')}</div><div class="grow"><h1><span class="acc" style="display:block">${esc(s.accent)}</span></h1></div>`,
+  how: (s) => `<h2>${esc(s.title)}</h2><div class="grow"><div class="flow">${s.steps.map((st, i) => `${i ? '<div class="arrow">→</div>' : ''}<div class="node"><b>${esc(st[0])}</b><small>${esc(st[1])}</small></div>`).join('')}</div><ul class="points">${s.points.map((p) => `<li>${esc(p)}</li>`).join('')}</ul></div>`,
+  shot: (s) => `<h2>${esc(s.title)}</h2><div class="sub">${esc(s.sub)}</div><div class="grow">${win(s.shot, 623)}<div class="chips">${s.chips.map((c) => `<span class="chip">${esc(c)}</span>`).join('')}</div></div>`,
+  alerts: (s) => `<h2>${esc(s.title)}</h2><div class="sub">${esc(s.sub)}</div><div class="grow"><div class="alerts-row"><div class="widget"><img src="${shotDir}${s.shot}"></div><div class="chat"><div class="me">${esc(s.chat.cmd)}</div><div class="bot">${esc(s.chat.lines.join('\n'))}</div></div></div><div class="chips">${['Telegram', 'Webhook', 'Desktop'].map((c) => `<span class="chip">${c}</span>`).join('')}</div></div>`,
+  close: (s) => `<div class="grow"><div class="big">${esc(s.title).replace('MIT', '<span class="acc">MIT</span>')}</div><div class="sub">${esc(s.sub)}</div><div class="url"><span>↳</span> ${C.site}</div><div class="url"><span>↳</span> ${C.repo}</div></div><div class="chips">${s.chips.map((c) => `<span class="chip">${esc(c)}</span>`).join('')}</div>`
+}
+
+document.body.innerHTML = C.slides
+  .map((s, i) => `<section class="slide"><div class="brand"><img src="../docs/assets/icon.png"><span>ServerPulse</span><span class="n">${i + 1} / ${total}</span></div>${body[s.kind](s)}<div class="foot"><span>${C.site}</span>${i < total - 1 ? `<b>${C.swipe} →</b>` : '<b>MIT</b>'}</div></section>`)
+  .join('')
+</script>
+</body>
+</html>
