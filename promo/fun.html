@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ServerPulse fun</title>
+<link rel="stylesheet" href="promo.css">
+<style>
+  body { width: 1080px; height: 1350px; overflow: hidden; }
+  .fun { width: 1080px; height: 1350px; padding: 52px 64px 48px; position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 16px; background: linear-gradient(180deg, var(--bg1), var(--bg2)); }
+  .fun::before { content: ''; position: absolute; width: 760px; height: 760px; right: -280px; bottom: -280px; background: radial-gradient(circle, rgba(34, 197, 94, 0.25), transparent 65%); }
+  .top { display: flex; align-items: center; gap: 14px; font-size: 28px; font-weight: 600; color: var(--ink-2); position: relative; }
+  .top img { width: 52px; height: 52px; }
+  .top .tag { margin-left: auto; font-size: 22px; font-weight: 600; color: #052e14; background: var(--green); padding: 6px 16px; border-radius: 999px; }
+  h1 { font-size: 62px; line-height: 1.08; font-weight: 800; letter-spacing: -1.5px; position: relative; }
+  h1 .acc { color: var(--green); display: inline; }
+  .lead { font-size: 30px; color: var(--ink-2); position: relative; margin-top: -6px; }
+
+  .panel { position: relative; border-radius: 24px; padding: 20px 28px; border: 1px solid var(--line); }
+  .panel .label { display: inline-block; font-size: 22px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; padding: 4px 14px; border-radius: 999px; margin-bottom: 10px; }
+  .before { background: rgba(239, 68, 68, 0.07); border-color: rgba(239, 68, 68, 0.35); transform: rotate(-1.2deg); }
+  .before .label { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .tab { background: #070b16; border: 1px solid var(--line); border-radius: 12px; padding: 8px 14px; font-family: 'Cascadia Mono', Consolas, monospace; font-size: 22px; color: #9fe8b6; line-height: 1.3; }
+  .tab small { display: block; font-size: 18px; color: #f87171; }
+  .tab:nth-child(2n) { transform: rotate(1deg); }
+  .tab:nth-child(3n) { transform: rotate(-0.8deg); }
+  .mood { margin-top: 10px; font-size: 26px; color: var(--ink-2); }
+  .mood b { color: #fca5a5; }
+
+  .vs { text-align: center; position: relative; line-height: 1; margin: -2px 0; }
+  .vs span { display: inline-block; background: var(--bg1); border: 1px solid var(--line); border-radius: 999px; padding: 6px 24px; font-size: 26px; font-weight: 700; color: var(--green); }
+
+  .after { background: rgba(34, 197, 94, 0.07); border-color: rgba(34, 197, 94, 0.4); transform: rotate(0.8deg); }
+  .after .label { background: rgba(34, 197, 94, 0.2); color: #86efac; }
+  .after-row { display: flex; gap: 24px; align-items: center; }
+  .after-row .w { width: 340px; flex: none; }
+  .after-row .w img { width: 100%; border-radius: 16px; box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55); }
+  .bubbles { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+  .bubble { background: rgba(255, 255, 255, 0.07); border: 1px solid var(--line); border-radius: 16px 16px 16px 4px; padding: 10px 16px; font-size: 25px; line-height: 1.3; }
+  .bubble:nth-child(2) { margin-left: 18px; }
+  .pulse { margin-top: 10px; height: 44px; width: 100%; }
+  .pulse path { stroke: var(--green); stroke-width: 4; fill: none; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 6px rgba(34, 197, 94, 0.8)); }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; position: relative; }
+  .stat { text-align: center; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05); border-radius: 18px; padding: 12px 6px; }
+  .stat b { display: block; font-size: 40px; color: var(--green); letter-spacing: -1px; line-height: 1.1; }
+  .stat span { font-size: 18px; color: var(--ink-2); line-height: 1.2; display: block; margin-top: 4px; }
+
+  .cta { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; position: relative; font-size: 26px; color: var(--ink-2); }
+  .cta .url { font-size: 30px; font-weight: 700; color: var(--ink); }
+  .cta .star { background: var(--green); color: #052e14; font-weight: 800; padding: 12px 24px; border-radius: 14px; font-size: 26px; }
+</style>
+</head>
+<body>
+<script>
+const lang = new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'tr'
+const D = {
+  tr: {
+    tag: 'Açık kaynak · MIT',
+    h1: `Her sabah <span class="acc">aynı 6 komut</span> 😵‍💫`,
+    lead: 'Bıktım, hepsini tek pencereye topladım.',
+    before: 'Önce',
+    tabs: [['ssh deploy@vps', 'Permission denied (1/3)'], ['docker ps -a', 'hangisi çökmüştü?'], ['df -h && df -i', 'disk mi dolu?'], ['journalctl -u ssh', '4.000 satır...'], ['ss -tln', 'bu port kimin?'], ['systemctl --failed', 'ah, o muydu']],
+    mood: `<b>6 komut, 4 sekme, 1 soğuyan kahve</b> ☕`,
+    vs: 'ServerPulse ile ⬇',
+    after: 'Sonra',
+    bubbles: ['✅ 8/8 container sağlıklı', '🟢 CPU %40 · RAM %49 · Disk %40', '🔔 Sorun olursa bildirim gelir'],
+    stats: [['0', 'sunucuya kurulan\nşey'], ['30 gün', 'CPU/RAM/disk\ngeçmişi'], ['3', 'bildirim kanalı\n(masaüstü, TG, webhook)'], ['MIT', 'açık kaynak,\nücretsiz']],
+    cta: 'Windows + macOS · Türkçe/English',
+    star: '⭐ Yıldız ver'
+  },
+  en: {
+    tag: 'Open source · MIT',
+    h1: `Same <span class="acc">6 commands</span> every morning 😵‍💫`,
+    lead: 'So I put them all in one window.',
+    before: 'Before',
+    tabs: [['ssh deploy@vps', 'Permission denied (1/3)'], ['docker ps -a', 'which one crashed?'], ['df -h && df -i', 'disk full?'], ['journalctl -u ssh', '4,000 lines...'], ['ss -tln', 'whose port is this?'], ['systemctl --failed', 'oh, that one']],
+    mood: `<b>6 commands, 4 tabs, 1 cold coffee</b> ☕`,
+    vs: 'With ServerPulse ⬇',
+    after: 'After',
+    bubbles: ['✅ 8/8 containers healthy', '🟢 CPU 40% · RAM 49% · Disk 40%', '🔔 You get notified when it breaks'],
+    stats: [['0', 'things installed\non the server'], ['30 days', 'CPU/RAM/disk\nhistory'], ['3', 'alert channels\n(desktop, TG, webhook)'], ['MIT', 'open source,\nfree']],
+    cta: 'Windows + macOS · English/Türkçe',
+    star: '⭐ Star it'
+  }
+}[lang]
+const dir = lang === 'tr' ? '../docs/screenshots/tr/' : '../docs/screenshots/'
+document.body.innerHTML = `<div class="fun">
+  <div class="top"><img src="../docs/assets/icon.png">ServerPulse<span class="tag">${D.tag}</span></div>
+  <h1>${D.h1}</h1><div class="lead">${D.lead}</div>
+  <div class="panel before"><span class="label">${D.before}</span>
+    <div class="tabs">${D.tabs.map(([c, n]) => `<div class="tab">$ ${c}<small>${n}</small></div>`).join('')}</div>
+    <div class="mood">${D.mood}</div>
+  </div>
+  <div class="vs"><span>${D.vs}</span></div>
+  <div class="panel after"><span class="label">${D.after}</span>
+    <div class="after-row">
+      <div class="w"><img src="${dir}widget.png"></div>
+      <div class="bubbles">${D.bubbles.map((b) => `<div class="bubble">${b}</div>`).join('')}</div>
+    </div>
+    <svg class="pulse" viewBox="0 0 900 70" preserveAspectRatio="none"><path d="M0 40 H250 l20 -34 l30 62 l24 -50 l16 22 H520 l18 -28 l24 52 l16 -24 H900"/></svg>
+  </div>
+  <div class="stats">${D.stats.map(([n, t]) => `<div class="stat"><b>${n}</b><span>${t.replace(/\n/g, '<br>')}</span></div>`).join('')}</div>
+  <div class="cta"><div><div class="url">tanjavaner.github.io/serverpulse</div>${D.cta}</div><div class="star">${D.star}</div></div>
+</div>`
+</script>
+</body>
+</html>
