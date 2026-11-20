@@ -1,7 +1,7 @@
 {
   "name": "serverpulse",
   "productName": "ServerPulse",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Agentless, SSH-based desktop monitor for your VPS servers and the projects running on them",
   "main": "./out/main/index.js",
   "author": "Yüksel Yazılım",
