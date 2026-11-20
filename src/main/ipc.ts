@@ -1,4 +1,5 @@
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import type { InvokeApi, InvokeChannel } from '@shared/ipc'
 import { t } from '@shared/i18n'
@@ -7,7 +8,8 @@ import type { Maintenance } from './maintenance'
 import type { Updater } from './updater'
 import type { RemoteNotifier } from './notify'
 import type { TerminalManager } from './terminal'
-import { containerAction, discover, getLogs, listProcesses, probe, prometheusQuery, pruneDocker, publicKeyLine, testConnection } from './operations'
+import { containerAction, diagnoseUnit, unitAction, discover, getLogs, listProcesses, probe, prometheusQuery, pruneDocker, publicKeyLine, testConnection } from './operations'
+import { safeBackupSet } from './ssh/commands'
 import { readSshConfigHosts } from './sshconfig'
 import { applyImport, buildExport, parseExport, WrongPasswordError } from './transfer'
 
@@ -96,6 +98,9 @@ export function registerIpc(monitor: Monitor, maint: Maintenance, updater: Updat
     'history:uptime': (ids) => monitor.history.uptime(Array.isArray(ids) ? ids.map(String).slice(0, 100) : []),
     'host:processes': (serverId) => listProcesses(monitor, String(serverId)),
     'security:acceptPorts': (serverId) => monitor.acceptPorts(String(serverId)),
+    'security:acceptPort': (serverId, port) => monitor.acceptPort(serverId, port),
+    'unit:diagnose': (serverId, unit) => diagnoseUnit(monitor, serverId, unit),
+    'unit:action': (serverId, unit, action) => unitAction(monitor, serverId, unit, action, confirm),
     'events:list': (limit) => monitor.history.events(Number(limit) || 100),
     'alerts:mute': (key, until) => monitor.mute(String(key), Number(until)),
     'alerts:unmute': (key) => monitor.unmute(String(key)),
@@ -104,6 +109,8 @@ export function registerIpc(monitor: Monitor, maint: Maintenance, updater: Updat
     'action:prune': (serverId, mode) => pruneDocker(monitor, serverId, mode === 'images' ? 'images' : 'safe', confirm),
     'maint:status': (serverId) => maint.status(serverId),
     'maint:backup': (serverId) => maint.backup(serverId, confirm),
+    'maint:backupAll': () => maint.backupAll(confirm),
+    'maint:listAllBackups': () => maint.listAllBackups(),
     'maint:upgrade': (serverId) => maint.upgrade(serverId, confirm),
     'maint:reboot': (serverId, text) => maint.reboot(serverId, String(text), confirm),
     'maint:postcheck': (serverId) => maint.postcheck(serverId),
@@ -122,8 +129,8 @@ export function registerIpc(monitor: Monitor, maint: Maintenance, updater: Updat
     },
     'maint:listBackups': (serverId) => maint.listBackups(serverId),
     'maint:deploy': (serverId, projectId) => maint.deploy(serverId, String(projectId), confirm),
-    'maint:openBackupDir': async (serverId) => {
-      const dir = maint.backupDir(serverId)
+    'maint:openBackupDir': async (serverId, setId) => {
+      const dir = setId === undefined ? maint.backupDir(serverId) : join(maint.backupDir(serverId), safeBackupSet(setId))
       mkdirSync(dir, { recursive: true })
       await shell.openPath(dir)
     },

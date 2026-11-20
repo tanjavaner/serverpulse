@@ -1,4 +1,5 @@
-import type { IssueSeverity, MaintStep, ProjectConfig, ServerConfig, ServerState, Severity, Thresholds } from '@shared/types'
+import type { IssueFix, IssueSeverity, MaintStep, ProjectConfig, ServerConfig, ServerState, Severity, Thresholds } from '@shared/types'
+import { isLoopbackBind } from '@shared/ports'
 import { t } from '@shared/i18n'
 import { fmtBytes } from '@shared/format'
 import { isPublicBind } from '../parsers/insight'
@@ -12,6 +13,7 @@ export interface RawIssue {
   severity: IssueSeverity
   title: string
   detail?: string
+  fix?: IssueFix
 }
 
 const RESTART_WINDOW_MS = 10 * 60 * 1000
@@ -32,8 +34,8 @@ export function evaluateServer(
 ): RawIssue[] {
   const issues: RawIssue[] = []
   const sid = server.id
-  const add = (key: string, severity: IssueSeverity, title: string, detail?: string, projectId?: string): void => {
-    issues.push({ key: `${sid}:${key}`, serverId: sid, projectId, severity, title, detail })
+  const add = (key: string, severity: IssueSeverity, title: string, detail?: string, projectId?: string, fix?: IssueFix): void => {
+    issues.push({ key: `${sid}:${key}`, serverId: sid, projectId, severity, title, detail, fix })
   }
   if (!server.enabled || !st) return issues
 
@@ -80,8 +82,8 @@ export function evaluateServer(
   }
   if (st.security && server.portBaseline) {
     for (const p of st.security.ports) {
-      if (server.portBaseline.includes(p)) continue
-      add(`port:${p}`, 'warn', t(isPublicBind(p) ? 'alert.newPortPublic' : 'alert.newPort', { s: server.name, p }), t('alert.newPortDetail'))
+      if (isLoopbackBind(p) || server.portBaseline.includes(p)) continue
+      add(`port:${p}`, 'warn', t(isPublicBind(p) ? 'alert.newPortPublic' : 'alert.newPort', { s: server.name, p }), t('alert.newPortDetail'), undefined, { kind: 'port', port: p })
     }
   }
 
@@ -122,13 +124,13 @@ export function evaluateServer(
     for (const u of st.systemd.units) {
       if (u.state !== 'active') {
         const pid = projectOf((p) => p.systemdUnits.includes(u.name))
-        add(`unit:${u.name}`, 'crit', t('alert.unitDown', { n: u.name, state: u.state }), undefined, pid)
+        add(`unit:${u.name}`, 'crit', t('alert.unitDown', { n: u.name, state: u.state }), undefined, pid, { kind: 'unit', unit: u.name })
       }
     }
     for (const f of st.systemd.failed) {
       const base = f.replace(/\.service$/, '')
       if (st.systemd.units.some((u) => u.name === base)) continue
-      add(`failed:${f}`, 'warn', t('alert.failedUnit', { u: f }))
+      add(`failed:${f}`, 'warn', t('alert.failedUnit', { u: f }), undefined, undefined, { kind: 'unit', unit: f })
     }
   }
 

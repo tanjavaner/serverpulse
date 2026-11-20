@@ -64,7 +64,7 @@ export function containerStarting(status: string): boolean {
 }
 
 export function isDumpComplete(tail: string): boolean {
-  return /PostgreSQL database cluster dump complete/.test(tail)
+  return /^-- PostgreSQL database (?:cluster )?dump complete\s*$/m.test(tail)
 }
 
 /** CMD.maintUpgradePoll çıktısı: "@@RC <kod|boş>\n@@SIZE <n>\n<log baytları>" */

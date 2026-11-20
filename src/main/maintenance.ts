@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
-import { appendFileSync, createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
+import { appendFileSync, createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Client } from 'ssh2'
-import type { BackupInfo, ContainerInfo, MaintEvent, MaintResult, MaintStatus, MaintStep, PostcheckResult, ProjectConfig, ServerConfig } from '@shared/types'
+import type { BackupAllResult, BackupFile, BackupSet, ServerBackups, ContainerInfo, MaintEvent, MaintResult, MaintStatus, MaintStep, PostcheckResult, ProjectConfig, ServerConfig } from '@shared/types'
 import { t } from '@shared/i18n'
 import type { Monitor } from './monitor'
-import { CMD, buildScript, parseSections, safeBackupFile } from './ssh/commands'
+import { BACKUP_SET, CMD, buildScript, parseSections, safeBackupFile, safeBackupRel, safeName } from './ssh/commands'
 import { execOn, sftpTransfer, withTempConnection } from './ssh/connection'
 import {
   containerStarting,
@@ -298,59 +298,188 @@ export class Maintenance {
       const server = this.server(serverId)
       const pg = await this.resolvePg(serverId)
       if (!pg) throw new Error(t('mm.noPg'))
-      const ok = await confirm(t('mm.backupConfirm', { s: server.name, c: pg.container, u: pg.user }), t('mm.backupOk'))
+      const ok = await confirm(t('mm.backupSetConfirm', { s: server.name, c: pg.container, u: pg.user }), t('mm.backupOk'))
       if (!ok) return { ok: false, cancelled: true }
 
-      const file = safeBackupFile(`pg-${backupStamp(new Date())}.sql.gz`)
-      const localDir = this.backupDir(serverId)
-      mkdirSync(localDir, { recursive: true })
-      const localPath = join(localDir, file)
-      const log = (l: string): void => this.line(serverId, 'backup', l)
-
-      return this.session(serverId, async (c) => {
-        log(t('mm.dumpRunning', { f: file }))
-        const dump = await execOn(c, CMD.maintBackup(file, pg.container, pg.user), 15 * MIN)
-        if (dump.code !== 0) throw new Error(t('mm.dumpFailed', { c: dump.code, e: (dump.stdout + dump.stderr).trim().slice(0, 500) }))
-
-        log(t('mm.verifying'))
-        const v = parseSections((await execOn(c, buildScript(CMD.maintBackupVerify(file)), 5 * MIN)).stdout)
-        const size = Number(v.size?.out.trim())
-        if (!(size > 0)) throw new Error(t('mm.backupEmpty'))
-        if (v.gunzip_t?.rc !== 0) throw new Error(t('mm.gunzipFailed', { e: v.gunzip_t?.out.trim() }))
-        if (!isDumpComplete(v.tail?.out ?? '')) throw new Error(t('mm.dumpIncomplete'))
-        const remoteSha = v.sha?.out.trim() ?? ''
-        const home = v.home?.out.trim()
-        if (!home?.startsWith('/') || !/^[0-9a-f]{64}$/.test(remoteSha)) throw new Error(t('mm.shaUnreadable'))
-        log(t('mm.onServer', { size, sha: remoteSha.slice(0, 16) }))
-
-        log(t('mm.downloading', { p: localPath }))
-        await sftpTransfer(c, 'get', `${home}/backups/${file}`, localPath)
-        const localSize = statSync(localPath).size
-        const localSha = await sha256File(localPath)
-        if (localSize !== size || localSha !== remoteSha) {
-          unlinkSync(localPath)
-          throw new Error(t('mm.downloadMismatch', { a: localSize, b: size, sha: localSha === remoteSha ? t('mm.same') : t('mm.different') }))
-        }
-        log(t('mm.downloadOk'))
-
-        const prune = await execOn(c, CMD.maintBackupPrune(), 60000)
-        const removed = prune.stdout.split('\n').filter((l) => l.trim()).length
-        log(removed ? t('mm.pruned', { n: removed }) : t('mm.nothingToPrune'))
-        return { ok: true, summary: t('mm.backupSummary', { f: file, size, sha: remoteSha, p: localPath }) }
-      })
+      return this.backupCore(serverId, pg, (l) => this.line(serverId, 'backup', l))
     }, (error) => ({ ok: false, error }))
   }
 
-  listBackups(serverId: string): BackupInfo[] {
+  private async backupCore(serverId: string, pg: { container: string; user: string }, log: (line: string) => void): Promise<{ ok: boolean; summary?: string; error?: string; partial: boolean; dbs: number; setId: string }> {
+    const now = new Date()
+    let setId = `pg-${backupStamp(now)}`
+    if (existsSync(join(this.backupDir(serverId), setId))) setId = `pg-${backupStamp(now, true)}`
+    const setDir = join(this.backupDir(serverId), setId)
+    mkdirSync(this.backupDir(serverId), { recursive: true })
+    // Exclusive creation prevents a same-second retry overwriting a verified set.
+    mkdirSync(setDir)
+    const files: (BackupFile & { sha: string })[] = []
+    const failed: { db: string; error: string }[] = []
+    const recordFailure = (db: string, error: string): void => {
+      failed.push({ db, error })
+      log(t('mm.backupDbFailed', { db, e: error }))
+    }
+    return this.session(serverId, async (c) => {
+      const listed = await execOn(c, CMD.maintListDbs(pg.container, pg.user), 60000)
+      if (listed.code !== 0) throw new Error(t('mm.backupListFailed', { e: (listed.stdout + listed.stderr).trim().slice(0, 500) }))
+      const dbs: string[] = []
+      for (const db of new Set(listed.stdout.split(/\r?\n/).filter(Boolean))) {
+        try {
+          safeName(db)
+          safeBackupRel(`${setId}/${db}.sql.gz`)
+          dbs.push(db)
+        } catch {
+          recordFailure(db, t('mm.backupUnsafeDb'))
+        }
+      }
+      for (const job of [{ db: 'globals', globals: true }, ...dbs.map((db) => ({ db, globals: false }))]) {
+        const file = `${setId}/${job.db}.sql.gz`
+        const localPath = join(setDir, `${job.db}.sql.gz`)
+        let downloading = false
+        try {
+          log(t('mm.backupDbRunning', { db: job.db, f: file }))
+          const dump = await execOn(c, job.globals ? CMD.maintBackupGlobals(setId, pg.container, pg.user) : CMD.maintBackupDb(setId, job.db, pg.container, pg.user), 15 * MIN)
+          if (dump.code !== 0) throw new Error(t('mm.backupDbDumpFailed', { c: dump.code, e: (dump.stdout + dump.stderr).trim().slice(0, 500) }))
+          log(t('mm.verifying'))
+          const v = parseSections((await execOn(c, buildScript(CMD.maintBackupVerify(file)), 5 * MIN)).stdout)
+          const size = Number(v.size?.out.trim())
+          if (v.size?.rc !== 0 || !(size > 0)) throw new Error(t('mm.backupEmpty'))
+          if (v.gunzip_t?.rc !== 0) throw new Error(t('mm.gunzipFailed', { e: v.gunzip_t?.out.trim() }))
+          if (v.tail?.rc !== 0 || !isDumpComplete(v.tail.out)) throw new Error(t('mm.backupDumpIncomplete'))
+          const remoteSha = v.sha?.out.trim() ?? ''
+          const home = v.home?.out.trim()
+          if (v.sha?.rc !== 0 || v.home?.rc !== 0 || !home?.startsWith('/') || !/^[0-9a-f]{64}$/.test(remoteSha)) throw new Error(t('mm.shaUnreadable'))
+          log(t('mm.onServer', { size, sha: remoteSha.slice(0, 16) }))
+          log(t('mm.downloading', { p: localPath }))
+          downloading = true
+          await sftpTransfer(c, 'get', `${home}/backups/${file}`, localPath)
+          const localSize = statSync(localPath).size
+          const localSha = await sha256File(localPath)
+          if (localSize !== size || localSha !== remoteSha) throw new Error(t('mm.downloadMismatch', { a: localSize, b: size, sha: localSha === remoteSha ? t('mm.same') : t('mm.different') }))
+          downloading = false
+          files.push({ db: job.db, file, size, sha: remoteSha })
+          log(t('mm.downloadOk'))
+        } catch (e) {
+          let error = (e as Error).message
+          try {
+            if (downloading && existsSync(localPath)) unlinkSync(localPath)
+          } catch (cleanup) {
+            error += `; ${(cleanup as Error).message}`
+          }
+          recordFailure(job.db, error)
+        }
+      }
+      const partial = failed.length > 0
+      writeFileSync(join(setDir, 'manifest.json'), JSON.stringify({
+        ts: now.getTime(), serverId, server: this.server(serverId).name, container: pg.container,
+        partial, dbs: files, failed
+      }, null, 2), 'utf8')
+      if (!files.length) throw new Error(t('mm.backupAllFailed'))
+      try {
+        const prune = await execOn(c, CMD.maintBackupPrune(), 60000)
+        if (prune.code !== 0) throw new Error((prune.stdout + prune.stderr).trim().slice(0, 300))
+        const removed = prune.stdout.split('\n').filter((l) => l.trim()).length
+        log(removed ? t('mm.pruned', { n: removed }) : t('mm.nothingToPrune'))
+      } catch (e) {
+        log(t('mm.backupPruneFailed', { e: (e as Error).message }))
+      }
+      const count = files.filter((f) => f.db !== 'globals').length
+      // Kısmi yedek başarı sayılmaz: lastBackupAt güncellenmez, güncelleme sihirbazı onu yedek kabul etmez.
+      if (partial) return { ok: false, partial, dbs: count, setId, error: t('mm.backupSetPartial', { n: count, failed: failed.length, p: setDir }) }
+      return { ok: true, partial, dbs: count, setId, summary: t('mm.backupSetComplete', { n: count, p: setDir }) }
+    })
+  }
+
+  async backupAll(confirm: Confirm): Promise<BackupAllResult> {
+    const results: BackupAllResult['results'] = []
+    try {
+      this.requireActions()
+      const servers = this.monitor.config.servers.filter((s) => s.enabled)
+      if (!await confirm(t('mm.backupAllConfirm', { servers: servers.map((s) => s.name).join('\n') }), t('mm.backupOk'))) {
+        return { ok: false, cancelled: true, results }
+      }
+      for (const server of servers) {
+        const base = { serverId: server.id, name: server.name, dbs: 0 }
+        const busyError = (): string | undefined => {
+          const busy = this.running.get(server.id)
+          return busy ? t('mm.busy', { s: t(`maint.step.${busy}`) }) : undefined
+        }
+        const busy = busyError()
+        if (busy) {
+          results.push({ ...base, status: 'skipped', error: busy })
+          continue
+        }
+        try {
+          const pg = await this.resolvePg(server.id)
+          if (!pg) {
+            results.push({ ...base, status: 'skipped', error: t('mm.noPgShort') })
+            continue
+          }
+          // resolvePg awaits SSH; recheck before acquiring the maintenance lock.
+          const running = busyError()
+          if (running) {
+            results.push({ ...base, status: 'skipped', error: running })
+            continue
+          }
+          const res = await this.run<MaintResult & { partial?: boolean; dbs?: number }>(server.id, 'backup',
+            () => this.backupCore(server.id, pg, (l) => this.line(server.id, 'backup', l)),
+            (error) => ({ ok: false, error }))
+          results.push({ ...base, dbs: res.dbs ?? 0, status: res.partial ? 'partial' : res.ok ? 'ok' : 'error', error: res.error })
+        } catch (e) {
+          results.push({ ...base, status: 'error', error: (e as Error).message })
+        }
+      }
+      return { ok: !results.some((r) => r.status === 'error'), results }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, results }
+    }
+  }
+
+  listBackups(serverId: string): BackupSet[] {
     const dir = this.backupDir(serverId)
     if (!existsSync(dir)) return []
-    return readdirSync(dir)
-      .filter((f) => f.endsWith('.sql.gz'))
-      .map((f) => {
-        const st = statSync(join(dir, f))
-        return { file: f, size: st.size, mtime: st.mtimeMs }
-      })
-      .sort((a, b) => b.mtime - a.mtime)
+    const sets: BackupSet[] = []
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      try {
+        const path = join(dir, entry.name)
+        if (entry.isFile() && entry.name.endsWith('.sql.gz')) {
+          const st = statSync(path)
+          sets.push({ id: entry.name, ts: st.mtimeMs, legacy: true, partial: false, files: [{ db: 'all', file: entry.name, size: st.size }], totalSize: st.size })
+        } else if (entry.isDirectory() && BACKUP_SET.test(entry.name)) {
+          let files: BackupFile[] = readdirSync(path, { withFileTypes: true })
+            .filter((f) => f.isFile() && f.name.endsWith('.sql.gz'))
+            .map((f) => ({ db: f.name.slice(0, -7), file: `${entry.name}/${f.name}`, size: statSync(join(path, f.name)).size }))
+          let ts = statSync(path).mtimeMs
+          // manifest.json yalnızca işlem sonunda yazılır; yoksa set yarım kalmış sayılır
+          let partial = true
+          try {
+            const m: unknown = JSON.parse(readFileSync(join(path, 'manifest.json'), 'utf8'))
+            if (m && typeof m === 'object') {
+              const manifest = m as { ts?: unknown; partial?: unknown; dbs?: unknown }
+              if (Array.isArray(manifest.dbs)) {
+                const manifestFiles: BackupFile[] = manifest.dbs.map((v: unknown) => {
+                  if (!v || typeof v !== 'object') throw new Error('Invalid backup manifest')
+                  const f = v as { db?: unknown; file?: unknown; size?: unknown }
+                  if (typeof f.db !== 'string' || typeof f.file !== 'string' || typeof f.size !== 'number' || !Number.isFinite(f.size) || f.size < 0) throw new Error('Invalid backup manifest')
+                  const file = safeBackupRel(f.file.includes('/') ? f.file : `${entry.name}/${f.file}`)
+                  if (!file.startsWith(`${entry.name}/`)) throw new Error('Invalid backup manifest path')
+                  return { db: f.db, file, size: f.size }
+                })
+                files = manifestFiles
+              }
+              if (typeof manifest.ts === 'number' && Number.isFinite(manifest.ts)) ts = manifest.ts
+              partial = manifest.partial === true
+            }
+          } catch { /* Missing or corrupt manifests fall back to directory metadata. */ }
+          sets.push({ id: entry.name, ts, partial, legacy: false, files, totalSize: files.reduce((sum, f) => sum + f.size, 0) })
+        }
+      } catch { /* An unreadable entry must not hide the remaining backups. */ }
+    }
+    return sets.sort((a, b) => b.ts - a.ts)
+  }
+
+  listAllBackups(): ServerBackups[] {
+    return this.monitor.config.servers.map((s) => ({ serverId: s.id, name: s.name, lastBackupAt: this.lastBackupAt(s.id), sets: this.listBackups(s.id) }))
   }
 
   // ------------------------------------------------------------ güncelleme

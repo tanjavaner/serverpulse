@@ -190,9 +190,10 @@ describe('görünürlük alarmları', () => {
     expect(evaluateServer(server, [], st, th, 0)).toEqual([])
 
     const issues = evaluateServer({ ...server, portBaseline: ['0.0.0.0:22'] }, [], st, th, 0)
-    expect(issues.map((i) => i.key)).toEqual(['s1:port:0.0.0.0:9999', 's1:port:127.0.0.1:6379'])
+    expect(issues.map((i) => i.key)).toEqual(['s1:port:0.0.0.0:9999'])
     expect(issues.every((i) => i.severity === 'warn')).toBe(true)
-    expect(issues.map((i) => i.title)).toEqual([t('alert.newPortPublic', { s: 'VDS', p: '0.0.0.0:9999' }), t('alert.newPort', { s: 'VDS', p: '127.0.0.1:6379' })])
+    expect(issues.map((i) => i.title)).toEqual([t('alert.newPortPublic', { s: 'VDS', p: '0.0.0.0:9999' })])
+    expect(issues[0].fix).toEqual({ kind: 'port', port: '0.0.0.0:9999' })
   })
 })
 

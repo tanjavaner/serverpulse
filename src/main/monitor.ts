@@ -358,6 +358,16 @@ export class Monitor extends EventEmitter {
     this.changed(true)
   }
 
+  acceptPort(id: string, port: string): void {
+    const server = this.config.server(id)
+    if (!server) throw new Error(t('err.serverNotFound'))
+    if (typeof port !== 'string' || !port.length || port.length > 100 || !this.states.get(id)?.security?.ports.includes(port)) {
+      throw new Error(t('alert.portNotListening'))
+    }
+    this.config.upsertServer({ ...server, portBaseline: [...new Set([...(server.portBaseline ?? []), port])] })
+    this.changed(true)
+  }
+
   /** Bir işlemden sonra sunucunun tüm toplayıcılarını hemen çalıştırır. */
   refreshServer(id: string): void {
     this.scheduler.runNow(id)

@@ -14,7 +14,11 @@ import type {
   HttpSample,
   LogOptions,
   LogResult,
-  BackupInfo,
+  BackupAllResult,
+  BackupSet,
+  ServerBackups,
+  UnitAction,
+  UnitDiagnosis,
   MaintEvent,
   MaintResult,
   MaintStatus,
@@ -72,6 +76,12 @@ export interface InvokeApi {
   'host:processes': (serverId: string) => ProcessResult
   /** Şu an dinlenen portları taban kabul eder. */
   'security:acceptPorts': (serverId: string) => void
+  /** Tek bir portu tabana ekler (sorun satırındaki "Tabana ekle"). */
+  'security:acceptPort': (serverId: string, port: string) => void
+  /** Başarısız unit: salt okunur teşhis (status + journal, certbot ise sertifikalar). */
+  'unit:diagnose': (serverId: string, unit: string) => UnitDiagnosis
+  /** Başarısız unit: restart / reset-failed (allowActions + onay). */
+  'unit:action': (serverId: string, unit: string, action: UnitAction) => ActionResult
   'events:list': (limit: number) => AlertEvent[]
   /** key: sorun anahtarı ya da tüm sunucu için "sunucuId:"; until: bitiş zamanı (ms). */
   'alerts:mute': (key: string, until: number) => void
@@ -89,10 +99,14 @@ export interface InvokeApi {
   'maint:postcheck': (serverId: string) => PostcheckResult
   'maint:autoremove': (serverId: string) => MaintResult
   'maint:restore': (serverId: string, confirmText: string) => MaintResult
-  'maint:listBackups': (serverId: string) => BackupInfo[]
+  'maint:listBackups': (serverId: string) => BackupSet[]
+  /** Tüm sunucular: tek onay, sırayla, veritabanı başına dosya. */
+  'maint:backupAll': () => BackupAllResult
+  'maint:listAllBackups': () => ServerBackups[]
   /** docker compose pull && up -d (projenin compose etiketlerinden). */
   'maint:deploy': (serverId: string, projectId: string) => MaintResult
-  'maint:openBackupDir': (serverId: string) => void
+  /** setId verilirse o setin klasörünü açar. */
+  'maint:openBackupDir': (serverId: string, setId?: string) => void
   'app:refresh': () => void
   'app:copy': (text: string) => void
   /** Etkileşimli SSH terminali; id'yi renderer üretir (UUID) ki ilk çıktı kaçmasın. */
@@ -167,6 +181,9 @@ export const INVOKE_CHANNELS: InvokeChannel[] = [
   'history:uptime',
   'host:processes',
   'security:acceptPorts',
+  'security:acceptPort',
+  'unit:diagnose',
+  'unit:action',
   'events:list',
   'alerts:mute',
   'alerts:unmute',
@@ -181,6 +198,8 @@ export const INVOKE_CHANNELS: InvokeChannel[] = [
   'maint:autoremove',
   'maint:restore',
   'maint:listBackups',
+  'maint:backupAll',
+  'maint:listAllBackups',
   'maint:deploy',
   'maint:openBackupDir',
   'app:refresh',

@@ -11,6 +11,7 @@ import { ProjectCard } from './ProjectCard'
 import { LogViewer, type LogTarget } from './LogViewer'
 import { MaintenanceTab } from './MaintenanceTab'
 import { IssueMute, ServerMute } from './Mute'
+import { IssueActions } from './IssueActions'
 import { TerminalTab } from './TerminalTab'
 import { ProcessesCard, SecurityTab } from './Insights'
 import type { Nav } from './App'
@@ -88,12 +89,13 @@ export function ServerView({ snap, server, nav }: { snap: AppSnapshot; server: S
           <SectionTitle>{t('server.openIssues', { n: issues.length })}</SectionTitle>
           <ul className="flex flex-col gap-1.5">
             {issues.map((i) => (
-              <li key={i.key} className="flex items-start gap-2 text-[13px]">
+              <li key={i.key} className="flex flex-wrap items-start gap-2 text-[13px]">
                 <StatusDot sev={i.severity} size={14} />
                 <div className="min-w-0 flex-1">
                   <span className="font-medium">{i.title}</span>
                   {i.detail ? <span className="text-ink-2"> · {i.detail}</span> : null}
                 </div>
+                <IssueActions issue={i} allowActions={snap.settings.allowActions} />
                 <IssueMute issueKey={i.key} mutes={snap.mutes} />
                 <span className="shrink-0 text-[11px] text-muted">{ago(i.since, now)}</span>
               </li>

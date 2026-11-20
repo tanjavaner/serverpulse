@@ -13,6 +13,7 @@ import type { LogOptions } from '@shared/types'
 export const SAFE_NAME = /^[a-zA-Z0-9_.-]+$/
 /** Sunucudaki ~/backups altındaki yedek dosya adları: uygulama üretir (pg-…) ya da geri yükleme için yükler (restore-…). */
 export const BACKUP_FILE = /^(pg|restore)-\d{4}-\d{2}-\d{2}_\d{4,6}\.sql\.gz$/
+export const BACKUP_SET = /^pg-[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4,6}$/
 const JOB_TS = /^\d{8}-\d{6}$/
 const SAFE_IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/
 const SAFE_PATH = /^\/[A-Za-z0-9_\-./?=&%~+:]*$/
@@ -20,7 +21,7 @@ const SAFE_PATH = /^\/[A-Za-z0-9_\-./?=&%~+:]*$/
 export class UnsafeInputError extends Error {}
 
 export function safeName(value: string): string {
-  if (typeof value !== 'string' || value.length === 0 || value.length > 128 || !SAFE_NAME.test(value)) {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 128 || value.trim() !== value || !SAFE_NAME.test(value)) {
     throw new UnsafeInputError(t('err.badName', { v: JSON.stringify(value) }))
   }
   return value
@@ -44,8 +45,39 @@ export function safeUrlPath(value: string | undefined): string {
 }
 
 export function safeBackupFile(value: string): string {
-  if (typeof value !== 'string' || !BACKUP_FILE.test(value)) throw new UnsafeInputError(t('err.badBackupFile', { v: value }))
+  if (typeof value !== 'string' || value.trim() !== value || !BACKUP_FILE.test(value)) throw new UnsafeInputError(t('err.badBackupFile', { v: value }))
   return value
+}
+
+export function safeBackupSet(value: string): string {
+  if (typeof value !== 'string' || value.trim() !== value || !BACKUP_SET.test(value)) throw new UnsafeInputError(t('err.badBackupFile', { v: value }))
+  return value
+}
+
+/** A legacy filename or exactly one set directory and a database filename. */
+export function safeBackupRel(value: string): string {
+  if (typeof value !== 'string' || value.includes('..')) throw new UnsafeInputError(t('err.badBackupFile', { v: value }))
+  const parts = value.split('/')
+  if (parts.length === 1) return safeBackupFile(value)
+  if (parts.length !== 2 || !parts[1].endsWith('.sql.gz')) throw new UnsafeInputError(t('err.badBackupFile', { v: value }))
+  safeBackupSet(parts[0])
+  safeName(parts[1].slice(0, -7))
+  return value
+}
+
+export function safeUnit(value: string): string {
+  if (typeof value !== 'string' || !value.length || value.length > 200 || value.trim() !== value || !/^[a-zA-Z0-9_.@:-]+$/.test(value)) {
+    throw new UnsafeInputError(t('err.badName', { v: JSON.stringify(value) }))
+  }
+  return value
+}
+
+function backupDump(setDir: string, db: string, command: string): string {
+  const dir = safeBackupSet(setDir)
+  const rel = safeBackupRel(`${dir}/${safeName(db)}.sql.gz`)
+  return `bash -o pipefail -c 'mkdir -p "$HOME/backups/${dir}" || exit 1; ` +
+    `if [ -e "$HOME/backups/${rel}" ]; then echo "File exists: ${rel}"; exit 1; fi; ` +
+    `${command} | gzip > "$HOME/backups/${rel}" || { rm -f "$HOME/backups/${rel}"; exit 1; }' 2>&1`
 }
 
 export function safeJobTs(value: string): string {
@@ -318,6 +350,19 @@ export const CMD = {
     const { lines, since } = safeLogOptions(opts)
     return `journalctl -u ${safeName(unit)} -n ${lines}${since ? ` --since "${JOURNAL_SINCE[since]}"` : ''} --no-pager 2>&1`
   },
+  unitDiagnose: (unit: string): Section[] => {
+    const u = safeUnit(unit)
+    return [
+      { name: 'status', cmd: `systemctl status --no-pager -l -n 0 -- ${u} 2>&1 | head -n 40` },
+      { name: 'journal', cmd: `${AS_ROOT}; journalctl -u ${u} -n 80 --no-pager 2>&1 || $S journalctl -u ${u} -n 80 --no-pager 2>&1` },
+      ...(u.startsWith('certbot') ? [
+        { name: 'lelog', cmd: `${AS_ROOT}; $S tail -n 80 /var/log/letsencrypt/letsencrypt.log 2>&1` },
+        { name: 'certs', cmd: `${AS_ROOT}; $S certbot certificates 2>&1` }
+      ] : [])
+    ]
+  },
+  unitRestart: (unit: string): string => `${AS_ROOT}; $S systemctl restart -- ${safeUnit(unit)} 2>&1`,
+  unitResetFailed: (unit: string): string => `${AS_ROOT}; $S systemctl reset-failed -- ${safeUnit(unit)} 2>&1`,
   /**
    * Docker disk temizliği. safe: etiketsiz (dangling) image'lar + build önbelleği; images: hiçbir container'ın
    * kullanmadığı tüm image'lar. Volume ve container'lara hiçbir modda dokunulmaz.
@@ -379,19 +424,34 @@ export const CMD = {
     )
   },
 
+  maintListDbs: (container: string, user: string): string =>
+    `docker exec ${safeName(container)} psql -U ${safeName(user)} -d postgres -Atc "select datname from pg_database where not datistemplate order by 1"`,
+
+  maintBackupDb: (setDir: string, db: string, container: string, user: string): string =>
+    backupDump(setDir, db, `docker exec ${safeName(container)} pg_dump -C -U ${safeName(user)} -- ${safeName(db)}`),
+
+  maintBackupGlobals: (setDir: string, container: string, user: string): string =>
+    backupDump(setDir, 'globals', `docker exec ${safeName(container)} pg_dumpall --globals-only -U ${safeName(user)}`),
+
   maintBackupVerify: (file: string): Section[] => {
-    const p = `"$HOME/backups/${safeBackupFile(file)}"`
+    const p = `"$HOME/backups/${safeBackupRel(file)}"`
     return [
       { name: 'home', cmd: 'printf "%s\\n" "$HOME"' },
       { name: 'size', cmd: `stat -c %s ${p}` },
       { name: 'gunzip_t', cmd: `gunzip -t ${p}` },
-      { name: 'tail', cmd: `gunzip -c ${p} | tail -n 3` },
+      { name: 'tail', cmd: `gunzip -c ${p} | tail -n 20` },
       { name: 'sha', cmd: `sha256sum ${p} | cut -d' ' -f1` }
     ]
   },
 
   /** Sunucuda son 7 pg-* yedeğini tutar. */
-  maintBackupPrune: (): string => `ls -1t "$HOME"/backups/pg-*.sql.gz 2>/dev/null | tail -n +8 | xargs -r rm -v -- 2>&1`,
+  maintBackupPrune: (): string =>
+    `find "$HOME/backups" -mindepth 1 -maxdepth 1 -type d -name 'pg-*' -printf '%T@ %f\\n' 2>/dev/null | ` +
+    `sort -nr | cut -d' ' -f2- | grep -E '^pg-[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4,6}$' | tail -n +8 | while IFS= read -r d; do ` +
+    `rm -rv -- "$HOME/backups/$d" >/dev/null && printf '%s\\n' "$HOME/backups/$d"; done; ` +
+    `find "$HOME/backups" -mindepth 1 -maxdepth 1 -type f -name 'pg-*.sql.gz' -printf '%T@ %f\\n' 2>/dev/null | ` +
+    `sort -nr | cut -d' ' -f2- | grep -E '^pg-[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{4,6}\\.sql\\.gz$' | tail -n +8 | while IFS= read -r f; do ` +
+    `rm -v -- "$HOME/backups/$f" >/dev/null && printf '%s\\n' "$HOME/backups/$f"; done`,
 
   /** apt update + upgrade (ayrık iş; bkz. jobStart). */
   maintUpgradeStart: (ts: string): string =>

@@ -7,6 +7,8 @@ import { ago, dateTime } from '../lib/format'
 import { sevLabel } from '../lib/health'
 import { Card, Empty, SectionTitle, StatusDot } from '../components/ui'
 import type { Nav } from './App'
+import { IssueActions } from './IssueActions'
+import { IssueMute } from './Mute'
 
 export function EventsView({ snap, nav }: { snap: AppSnapshot; nav: Nav }): ReactNode {
   const now = useNow()
@@ -24,12 +26,14 @@ export function EventsView({ snap, nav }: { snap: AppSnapshot; nav: Nav }): Reac
         ) : (
           <ul className="flex flex-col gap-1.5">
             {snap.issues.map((i) => (
-              <li key={i.key} className="flex items-center gap-2 text-[13px]">
+              <li key={i.key} className="flex flex-wrap items-center gap-2 text-[13px]">
                 <StatusDot sev={i.severity} size={14} />
                 <button className="font-medium hover:text-accent" onClick={() => i.serverId && nav({ view: 'server', serverId: i.serverId })}>
                   {i.title}
                 </button>
                 <span className="truncate text-ink-2">{i.detail}</span>
+                <IssueActions issue={i} allowActions={snap.settings.allowActions} />
+                <IssueMute issueKey={i.key} mutes={snap.mutes} />
                 <span className="ml-auto shrink-0 text-[11px] text-muted">
                   {name(i.serverId)} · {ago(i.since, now)}
                 </span>

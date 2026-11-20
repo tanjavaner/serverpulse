@@ -419,6 +419,8 @@ export interface Issue {
   title: string
   detail?: string
   since: number
+  /** Uygulama içinden yapılabilecek düzeltme (varsa). */
+  fix?: IssueFix
 }
 
 export interface AppSnapshot {
@@ -644,6 +646,63 @@ export interface BackupInfo {
   size: number
   mtime: number
 }
+
+/** Bir yedek setindeki tek dosya (veritabanı başına bir .sql.gz; "globals" = roller). */
+export interface BackupFile {
+  /** Veritabanı adı; roller/kullanıcılar için "globals", eski biçimde "all". */
+  db: string
+  /** Sunucunun yedek klasörüne göre göreli yol (ör. "pg-2026-11-20_1830/asistan.sql.gz"). */
+  file: string
+  size: number
+}
+
+/** Tek seferde alınmış yedek seti. */
+export interface BackupSet {
+  /** Klasör adı (ör. "pg-2026-11-20_1830") ya da eski biçimde dosya adı. */
+  id: string
+  /** Yedeğin alındığı zaman (manifest.json, yoksa dosya zamanı). */
+  ts: number
+  /** Eski biçim: pg_dumpall ile tek dosya. */
+  legacy: boolean
+  /** Bazı veritabanları alınamadıysa true. */
+  partial: boolean
+  files: BackupFile[]
+  totalSize: number
+}
+
+export interface ServerBackups {
+  serverId: string
+  name: string
+  lastBackupAt?: number
+  sets: BackupSet[]
+}
+
+export type BackupAllStatus = 'ok' | 'partial' | 'skipped' | 'error'
+
+export interface BackupAllResult {
+  ok: boolean
+  cancelled?: boolean
+  error?: string
+  results: { serverId: string; name: string; status: BackupAllStatus; dbs: number; error?: string }[]
+}
+
+/** Başarısız systemd unit teşhisi. */
+export interface UnitDiagnosis {
+  ok: boolean
+  error?: string
+  unit: string
+  /** Ham çıktı: systemctl status + journal (+ certbot logu). */
+  output: string
+  /** Bilinen hata kalıplarından çıkarılan öneriler. */
+  hints: { title: string; detail: string }[]
+  /** certbot için sertifikalar ve kalan gün. */
+  certs?: { name: string; domains: string[]; daysLeft: number | null; expiry?: string }[]
+}
+
+export type UnitAction = 'restart' | 'reset-failed'
+
+/** Bir sorunun uygulama içinden düzeltilebilmesi için bilgi. */
+export type IssueFix = { kind: 'unit'; unit: string } | { kind: 'port'; port: string }
 
 export interface PostcheckResult extends MaintResult {
   kernel?: string

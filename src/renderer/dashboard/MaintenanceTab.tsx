@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { AppSnapshot, BackupInfo, MaintResult, MaintStatus, MaintStep, PostcheckResult, ServerConfig } from '@shared/types'
+import type { AppSnapshot, BackupSet, MaintResult, MaintStatus, MaintStep, PostcheckResult, ServerConfig } from '@shared/types'
 import { t } from '@shared/i18n'
 import { api } from '../lib/api'
-import { ago, dateTime, fmtBytes } from '../lib/format'
+import { ago } from '../lib/format'
 import { useNow } from '../lib/hooks'
 import { Alert, Button, Card, SectionTitle } from '../components/ui'
 import { cleanErr } from './ServerForm'
 import { LiveLog } from './LiveLog'
+import { BackupSetList } from './BackupSetList'
 import { pushLocal, stepLabel, useMaintLog } from '../lib/maintLog'
 
 const DAY_MS = 24 * 3600_000
@@ -19,7 +20,7 @@ export function MaintenanceTab({ snap, server }: { snap: AppSnapshot; server: Se
   const [busy, setBusy] = useState<MaintStep | 'wizard' | null>(null)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error' | 'warn'; text: string } | null>(null)
   const [post, setPost] = useState<PostcheckResult | null>(null)
-  const [backups, setBackups] = useState<BackupInfo[]>([])
+  const [backups, setBackups] = useState<BackupSet[]>([])
   const [panel, setPanel] = useState<Panel>(null)
   const [rebootText, setRebootText] = useState('')
   const [restoreText, setRestoreText] = useState('')
@@ -257,21 +258,7 @@ export function MaintenanceTab({ snap, server }: { snap: AppSnapshot; server: Se
         >
           {t('maint.localBackups', { n: backups.length })}
         </SectionTitle>
-        {backups.length ? (
-          <table className="tnum w-full text-[12px]">
-            <tbody>
-              {backups.slice(0, 10).map((b) => (
-                <tr key={b.file} className="border-t border-line">
-                  <td className="py-1.5 font-mono">{b.file}</td>
-                  <td className="py-1.5 text-right">{fmtBytes(b.size)}</td>
-                  <td className="py-1.5 text-right text-ink-2">{dateTime(b.mtime)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <div className="text-[12px] text-muted">{t('maint.noBackups')}</div>
-        )}
+        <BackupSetList serverId={server.id} sets={backups} />
       </Card>
 
       <details className="rounded-xl border border-line bg-surface p-4">

@@ -11,6 +11,7 @@ import { Discovery } from './Discovery'
 import { ProjectEditor } from './ProjectEditor'
 import { SettingsView } from './SettingsView'
 import { EventsView } from './EventsView'
+import { BackupsView } from './BackupsView'
 
 export type Route =
   | { view: 'home' }
@@ -22,6 +23,7 @@ export type Route =
   | { view: 'editProject'; serverId: string; projectId?: string }
   | { view: 'settings' }
   | { view: 'events' }
+  | { view: 'backups' }
 
 export type Nav = (r: Route) => void
 
@@ -96,6 +98,8 @@ function Content({ snap, route, nav }: { snap: AppSnapshot; route: Route; nav: N
       return <SettingsView snap={snap} />
     case 'events':
       return <EventsView snap={snap} nav={nav} />
+    case 'backups':
+      return <BackupsView snap={snap} />
     default:
       return null
   }
@@ -152,6 +156,9 @@ function Sidebar({ snap, route, nav }: { snap: AppSnapshot; route: Route; nav: N
         <NavItem active={route.view === 'events'} onClick={() => nav({ view: 'events' })}>
           <span className="w-3 text-center">⚑</span> {t('nav.events')}
           {snap.issues.length ? <span className="ml-auto rounded-full bg-critical px-1.5 text-[10px] font-bold text-white">{snap.issues.length}</span> : null}
+        </NavItem>
+        <NavItem active={route.view === 'backups'} onClick={() => nav({ view: 'backups' })}>
+          <span className="w-3 text-center">⛁</span> {t('nav.backups')}
         </NavItem>
         <NavItem active={route.view === 'settings'} onClick={() => nav({ view: 'settings' })}>
           <span className="w-3 text-center">⚙</span> {t('nav.settings')}

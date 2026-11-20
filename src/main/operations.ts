@@ -13,18 +13,73 @@ import type {
   PromResult,
   PublicKeyResult,
   ServerInput,
-  TestResult
+  TestResult,
+  UnitAction,
+  UnitDiagnosis
 } from '@shared/types'
 import { normalizePubKey } from '@shared/setup'
 import { t, type MsgKey } from '@shared/i18n'
 import type { Monitor } from './monitor'
-import { CMD, buildScript, parseSections, safeName } from './ssh/commands'
+import { CMD, buildScript, parseSections, safeName, safeUnit } from './ssh/commands'
 import { execOn, probeHostKey, withTempConnection } from './ssh/connection'
 import { isDockerPermissionError, parseDockerPs } from './parsers/docker'
 import { parseNginxSites, parseRunningUnits } from './parsers/misc'
 import { buildProposals, isPostgresImage, suggestUnits } from './discovery/proposals'
 import { parseProcesses } from './parsers/insight'
 import { allUnits } from './collectors'
+import { certbotHints, parseCertbotCertificates, unitHints } from './parsers/certbot'
+
+function knownUnit(monitor: Monitor, serverId: string, unit: string): string {
+  const u = safeUnit(unit)
+  const server = monitor.config.server(serverId)
+  if (!server) throw new Error(t('err.serverNotFound'))
+  if (!monitor.state(serverId)?.systemd?.failed.includes(u) && !allUnits(server, monitor.config.projectsOf(serverId)).includes(u)) {
+    throw new Error(t('err.unknownUnit'))
+  }
+  return u
+}
+
+export async function diagnoseUnit(monitor: Monitor, serverId: string, unit: string): Promise<UnitDiagnosis> {
+  try {
+    const u = knownUnit(monitor, serverId, unit)
+    const sections = CMD.unitDiagnose(u)
+    const r = await monitor.execFor(serverId, buildScript(sections), 60000)
+    const sec = parseSections(r.stdout)
+    const output = sections.map((s) => `--- ${s.name} ---\n${sec[s.name]?.out ?? ''}`).join('\n\n') + (r.stderr ? `\n${r.stderr}` : '')
+    const certbot = u.startsWith('certbot')
+    const text = `${sec.journal?.out ?? ''}\n${sec.lelog?.out ?? ''}`
+    const readable = sections.some((s) => !!sec[s.name] && sec[s.name].rc !== null)
+    return { ok: readable, unit: u, output, hints: certbot ? certbotHints(text) : unitHints(text),
+      certs: certbot ? parseCertbotCertificates(sec.certs?.out ?? '') : undefined,
+      error: readable ? undefined : t('unit.diagnosisFailed') }
+  } catch (e) {
+    return { ok: false, unit, output: '', hints: [], error: (e as Error).message }
+  }
+}
+
+export async function unitAction(monitor: Monitor, serverId: string, unit: string, action: UnitAction,
+  confirm: (message: string, okLabel: string) => Promise<boolean>): Promise<ActionResult> {
+  try {
+    if (!monitor.config.settings.allowActions) throw new Error(t('err.actionsDisabled'))
+    if (action !== 'restart' && action !== 'reset-failed') throw new Error(t('err.badAction'))
+    const u = knownUnit(monitor, serverId, unit)
+    const server = monitor.config.server(serverId)!
+    const restart = action === 'restart'
+    if (!await confirm(t(restart ? 'unit.restartConfirm' : 'unit.resetConfirm', { s: server.name, unit: u }), t(restart ? 'unit.restartOk' : 'unit.resetOk'))) {
+      return { ok: false, cancelled: true }
+    }
+    knownUnit(monitor, serverId, u)
+    if (!monitor.config.settings.allowActions) throw new Error(t('err.actionsDisabled'))
+    const r = await monitor.execFor(serverId, restart ? CMD.unitRestart(u) : CMD.unitResetFailed(u), 90000)
+    monitor.refreshServer(serverId)
+    const output = (r.stdout + r.stderr).trim()
+    const passwordRequired = /a password is required/i.test(output)
+    return { ok: r.code === 0 && !passwordRequired, output,
+      error: passwordRequired ? t('unit.sudoRequired') : r.code === 0 ? undefined : t('err.exitCode', { n: r.code }) }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
 
 export async function probe(host: string, port: number): Promise<HostKeyProbe> {
   try {

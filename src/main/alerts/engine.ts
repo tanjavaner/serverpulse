@@ -26,7 +26,7 @@ export class AlertEngine {
       if (cur) {
         this.missingSince.delete(r.key)
         const escalated = cur.severity === 'warn' && r.severity === 'crit'
-        const next: Issue = { ...cur, severity: r.severity, title: r.title, detail: r.detail, projectId: r.projectId }
+        const next: Issue = { ...cur, severity: r.severity, title: r.title, detail: r.detail, projectId: r.projectId, fix: r.fix }
         this.active.set(r.key, next)
         if (escalated) t.escalated.push(next)
         continue

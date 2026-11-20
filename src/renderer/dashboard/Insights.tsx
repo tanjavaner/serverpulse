@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import type { AppSnapshot, ProcessResult, ServerConfig } from '@shared/types'
 import { t } from '@shared/i18n'
+import { isLoopbackBind } from '@shared/ports'
 import { api } from '../lib/api'
 import { fmtBytes, fmtPct } from '../lib/format'
 import { Alert, Button, Card, Empty, SectionTitle, StatusDot } from '../components/ui'
@@ -12,7 +13,7 @@ export function SecurityTab({ snap, server }: { snap: AppSnapshot; server: Serve
   const sec = snap.states[server.id]?.security
   if (!sec) return <Empty>{t('sec.noData')}</Empty>
   const baseline = new Set(server.portBaseline ?? [])
-  const newPorts = sec.ports.filter((p) => server.portBaseline && !baseline.has(p))
+  const newPorts = sec.ports.filter((p) => server.portBaseline && !baseline.has(p) && !isLoopbackBind(p))
   const svc = (state: string): ReactNode => (
     <span className="inline-flex items-center gap-1.5">
       <StatusDot sev={state === 'active' ? 'ok' : state === 'unknown' ? 'unknown' : 'warn'} size={12} />

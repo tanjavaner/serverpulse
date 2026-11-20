@@ -88,6 +88,27 @@ function healthy(): ServerState {
 const NOW = 1_000_000_000
 
 describe('evaluateServer', () => {
+  it('skips loopback ports and attaches fixes to public ports', () => {
+    const st = healthy()
+    st.security = {
+      ts: 0, auth: { readable: true, attempts: 0, topIps: [] },
+      sshd: { passwordAuth: false, rootLogin: 'no', fromDefaults: false }, fail2ban: 'active', unattended: 'active',
+      ports: ['127.0.0.1:5432', '127.2.3.4:9090', '[::1]:8080', '::1:8081', 'localhost:3000', '0.0.0.0:80', '[::]:443', '0.0.0.0:22']
+    }
+    const issues = evaluateServer({ ...server, portBaseline: ['0.0.0.0:22'] }, [project], st, th, NOW)
+    expect(issues).toHaveLength(2)
+    expect(issues.map((i) => i.fix)).toEqual([{ kind: 'port', port: '0.0.0.0:80' }, { kind: 'port', port: '[::]:443' }])
+  })
+
+  it('attaches fixes to failed units, including configured units', () => {
+    const st = healthy()
+    st.systemd!.failed = ['certbot.service', 'worker@tenant.service', 'nginx.service']
+    st.systemd!.units = [{ name: 'nginx', state: 'failed' }]
+    expect(evaluateServer(server, [project], st, th, NOW).map((i) => i.fix)).toEqual([
+      { kind: 'unit', unit: 'nginx' }, { kind: 'unit', unit: 'certbot.service' }, { kind: 'unit', unit: 'worker@tenant.service' }
+    ])
+  })
+
   it('sağlıklı durumda sorun yok', () => {
     expect(evaluateServer(server, [project], healthy(), th, NOW)).toEqual([])
   })
@@ -206,6 +227,17 @@ describe('evaluateServer', () => {
 
 describe('AlertEngine debounce', () => {
   const issue = { key: 'k', serverId: 's1', severity: 'crit' as const, title: 't' }
+
+  it('propagates fixes when opening and refreshing issues', () => {
+    const e = new AlertEngine()
+    const fix = { kind: 'unit' as const, unit: 'certbot.service' }
+    expect(e.update([{ ...issue, fix }], 0, 0).opened[0].fix).toEqual(fix)
+    const updated = { kind: 'unit' as const, unit: 'other.service' }
+    e.update([{ ...issue, fix: updated }], 1, 0)
+    expect(e.activeIssues()[0].fix).toEqual(updated)
+    e.update([issue], 2, 0)
+    expect(e.activeIssues()[0].fix).toBeUndefined()
+  })
 
   it('sorun debounce süresi dolmadan açılmaz, dolunca bir kez açılır', () => {
     const e = new AlertEngine()
